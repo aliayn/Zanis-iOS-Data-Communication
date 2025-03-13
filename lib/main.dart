@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/route_manager.dart';
 import 'package:zanis_ios_data_communication/home/widget/home_screen.dart';
+import 'package:zanis_ios_data_communication/utils/error_handler.dart';
 
 void main() {
-  runApp(const MyApp());
+  ErrorHandler(app: MyApp());
 }
 
 class MyApp extends StatelessWidget {

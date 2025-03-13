@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:zanis_ios_data_communication/service/app_service.dart';
 
 import 'app_logger.dart';
 
@@ -78,6 +79,7 @@ class ErrorHandler with AppLogger {
 
     runZonedGuarded(() async {
       WidgetsFlutterBinding.ensureInitialized();
+      AppService.init();
       runApp(app);
     }, ((error, stack) {
       //add firebase crashlytics
