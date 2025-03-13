@@ -7,14 +7,31 @@ class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return BlocProvider(
+  Widget build(BuildContext context) => BlocProvider(
       create: (context) => inject<HomeCubit>(),
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Home'),
         ),
+        body: _buildBody(),
       ),
     );
-  }
+
+  Widget _buildBody() => BlocBuilder<HomeCubit, HomeState>(
+      buildWhen: (previous, current) =>
+          current.whenOrNull(
+            data: (value) => true,
+            error: (message) => true,
+            loading: () => true,
+          ) ??
+          false,
+      builder: (context, state) {
+        return state.maybeWhen(
+          data: (value) => Center(child: Text(value.toString())),
+          error: (message) => Center(child: Text(message)),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          orElse: () => const SizedBox.shrink(),
+        );
+      },
+    );
 }
