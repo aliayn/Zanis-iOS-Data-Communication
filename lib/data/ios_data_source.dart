@@ -30,9 +30,23 @@ class IOSDataAdapter {
   // Adapts raw platform data to the app's data model
   static int adaptData(Map<dynamic, dynamic> rawData) {
     try {
-      return rawData['value'] as int;
-    } on Exception catch (e) {
-      throw Exception("Invalid data format: $e");
+      // Check if 'value' key exists
+      if (!rawData.containsKey('value')) {
+        throw FormatException('Missing required key: value');
+      }
+      
+      // Check if the value is an integer
+      final value = rawData['value'];
+      if (value is! int) {
+        throw FormatException('Value is not an integer: $value');
+      }
+      
+      return value;
+    } catch (e) {
+      if (e is FormatException) {
+        rethrow;
+      }
+      throw FormatException("Invalid data format: $e");
     }
   }
 }
