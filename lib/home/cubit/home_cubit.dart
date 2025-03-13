@@ -15,6 +15,7 @@ class HomeCubit extends Cubit<HomeState> {
 
   void init() {
     final dataStream = _iosDataSource.stream;
+    emit(HomeState.loading());
     dataStream.listen((data) {
       final value = IOSDataAdapter.adaptData(data);
       emit(HomeState.data(value));
