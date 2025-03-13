@@ -27,9 +27,9 @@ extension GetItInjectableX on _i174.GetIt {
       environment,
       environmentFilter,
     );
-    gh.singleton<_i500.IosDataSource>(() => _i500.IosDataSource());
+    gh.singleton<_i500.IOSDataSource>(() => _i500.IOSDataSource());
     gh.factory<_i1070.HomeCubit>(
-        () => _i1070.HomeCubit(gh<_i500.IosDataSource>()));
+        () => _i1070.HomeCubit(gh<_i500.IOSDataSource>()));
     return this;
   }
 }

@@ -8,7 +8,7 @@ part 'home_cubit.freezed.dart';
 
 @injectable
 class HomeCubit extends Cubit<HomeState> {
-  final IosDataSource _iosDataSource;
+  final IOSDataSource _iosDataSource;
   HomeCubit(this._iosDataSource) : super(HomeState.initial()) {
     init();
   }

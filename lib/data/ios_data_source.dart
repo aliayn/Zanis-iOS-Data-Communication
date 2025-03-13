@@ -10,7 +10,7 @@ import 'package:injectable/injectable.dart';
 /// and the MethodChannel to send data to the iOS app
 /// Singleton class
 @singleton
-class IosDataSource {
+class IOSDataSource {
   static const EventChannel _streamChannel =
       EventChannel('zanis_ios_data_communication');
 
