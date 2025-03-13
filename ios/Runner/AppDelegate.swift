@@ -11,7 +11,7 @@ import UIKit
 
     // register the stream handler
     let register = self.registrar(forPlugin: "zanis_ios_data_communication")
-      StreamHandlerImpl.registerWith(registrar: register)
+      StreamHandlerImpl.register(registrar: register!)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

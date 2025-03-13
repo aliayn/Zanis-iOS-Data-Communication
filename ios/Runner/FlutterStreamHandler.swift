@@ -6,6 +6,7 @@
 //
 
 import Flutter
+
 final class DataService {
     /// Singleton instance with proper thread safety
     static let shared = DataService()
@@ -21,7 +22,7 @@ final class DataService {
             "value": Int.random(in: 0...100),
             "type": "random"
         ]
-            self.eventSink?(data)
+            self?.eventSink?(data)
         }
     }
 
@@ -29,10 +30,11 @@ final class DataService {
 
 class StreamHandlerImpl: NSObject, FlutterStreamHandler {
 
-    static func register(with registrar: FlutterPluginRegistrar) {
-        let channel = FlutterMethodChannel(name: "zanis_ios_data_communication", binaryMessenger: registrar.messenger())
-        let instance = StreamHandlerImpl()
-        registrar.addMethodCallDelegate(instance, channel: channel)
+    /// Registers the stream handler for the event channel
+    static func register(registrar: FlutterPluginRegistrar) {
+        let eventChannel = FlutterEventChannel(name: "zanis_ios_data_communication", binaryMessenger: registrar.messenger())
+        let stramHandler = StreamHandlerImpl()
+        eventChannel.setStreamHandler(stramHandler)
     }
 
 
