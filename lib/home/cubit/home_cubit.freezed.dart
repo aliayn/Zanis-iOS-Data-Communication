@@ -21,7 +21,7 @@ mixin _$HomeState {
     required TResult Function() initial,
     required TResult Function() loading,
     required TResult Function(String message) error,
-    required TResult Function(int value) data,
+    required TResult Function(String value) data,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -29,7 +29,7 @@ mixin _$HomeState {
     TResult? Function()? initial,
     TResult? Function()? loading,
     TResult? Function(String message)? error,
-    TResult? Function(int value)? data,
+    TResult? Function(String value)? data,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -37,7 +37,7 @@ mixin _$HomeState {
     TResult Function()? initial,
     TResult Function()? loading,
     TResult Function(String message)? error,
-    TResult Function(int value)? data,
+    TResult Function(String value)? data,
     required TResult orElse(),
   }) =>
       throw _privateConstructorUsedError;
@@ -132,7 +132,7 @@ class _$InitialImpl implements _Initial {
     required TResult Function() initial,
     required TResult Function() loading,
     required TResult Function(String message) error,
-    required TResult Function(int value) data,
+    required TResult Function(String value) data,
   }) {
     return initial();
   }
@@ -143,7 +143,7 @@ class _$InitialImpl implements _Initial {
     TResult? Function()? initial,
     TResult? Function()? loading,
     TResult? Function(String message)? error,
-    TResult? Function(int value)? data,
+    TResult? Function(String value)? data,
   }) {
     return initial?.call();
   }
@@ -154,7 +154,7 @@ class _$InitialImpl implements _Initial {
     TResult Function()? initial,
     TResult Function()? loading,
     TResult Function(String message)? error,
-    TResult Function(int value)? data,
+    TResult Function(String value)? data,
     required TResult orElse(),
   }) {
     if (initial != null) {
@@ -249,7 +249,7 @@ class _$LoadingImpl implements _Loading {
     required TResult Function() initial,
     required TResult Function() loading,
     required TResult Function(String message) error,
-    required TResult Function(int value) data,
+    required TResult Function(String value) data,
   }) {
     return loading();
   }
@@ -260,7 +260,7 @@ class _$LoadingImpl implements _Loading {
     TResult? Function()? initial,
     TResult? Function()? loading,
     TResult? Function(String message)? error,
-    TResult? Function(int value)? data,
+    TResult? Function(String value)? data,
   }) {
     return loading?.call();
   }
@@ -271,7 +271,7 @@ class _$LoadingImpl implements _Loading {
     TResult Function()? initial,
     TResult Function()? loading,
     TResult Function(String message)? error,
-    TResult Function(int value)? data,
+    TResult Function(String value)? data,
     required TResult orElse(),
   }) {
     if (loading != null) {
@@ -393,7 +393,7 @@ class _$ErrorImpl implements _Error {
     required TResult Function() initial,
     required TResult Function() loading,
     required TResult Function(String message) error,
-    required TResult Function(int value) data,
+    required TResult Function(String value) data,
   }) {
     return error(message);
   }
@@ -404,7 +404,7 @@ class _$ErrorImpl implements _Error {
     TResult? Function()? initial,
     TResult? Function()? loading,
     TResult? Function(String message)? error,
-    TResult? Function(int value)? data,
+    TResult? Function(String value)? data,
   }) {
     return error?.call(message);
   }
@@ -415,7 +415,7 @@ class _$ErrorImpl implements _Error {
     TResult Function()? initial,
     TResult Function()? loading,
     TResult Function(String message)? error,
-    TResult Function(int value)? data,
+    TResult Function(String value)? data,
     required TResult orElse(),
   }) {
     if (error != null) {
@@ -480,7 +480,7 @@ abstract class _$$DataImplCopyWith<$Res> {
           _$DataImpl value, $Res Function(_$DataImpl) then) =
       __$$DataImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({int value});
+  $Res call({String value});
 }
 
 /// @nodoc
@@ -501,7 +501,7 @@ class __$$DataImplCopyWithImpl<$Res>
       null == value
           ? _value.value
           : value // ignore: cast_nullable_to_non_nullable
-              as int,
+              as String,
     ));
   }
 }
@@ -512,7 +512,7 @@ class _$DataImpl implements _Data {
   const _$DataImpl(this.value);
 
   @override
-  final int value;
+  final String value;
 
   @override
   String toString() {
@@ -544,7 +544,7 @@ class _$DataImpl implements _Data {
     required TResult Function() initial,
     required TResult Function() loading,
     required TResult Function(String message) error,
-    required TResult Function(int value) data,
+    required TResult Function(String value) data,
   }) {
     return data(value);
   }
@@ -555,7 +555,7 @@ class _$DataImpl implements _Data {
     TResult? Function()? initial,
     TResult? Function()? loading,
     TResult? Function(String message)? error,
-    TResult? Function(int value)? data,
+    TResult? Function(String value)? data,
   }) {
     return data?.call(value);
   }
@@ -566,7 +566,7 @@ class _$DataImpl implements _Data {
     TResult Function()? initial,
     TResult Function()? loading,
     TResult Function(String message)? error,
-    TResult Function(int value)? data,
+    TResult Function(String value)? data,
     required TResult orElse(),
   }) {
     if (data != null) {
@@ -614,9 +614,9 @@ class _$DataImpl implements _Data {
 }
 
 abstract class _Data implements HomeState {
-  const factory _Data(final int value) = _$DataImpl;
+  const factory _Data(final String value) = _$DataImpl;
 
-  int get value;
+  String get value;
 
   /// Create a copy of HomeState
   /// with the given fields replaced by the non-null parameter values.

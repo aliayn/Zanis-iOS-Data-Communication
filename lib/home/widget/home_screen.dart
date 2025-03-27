@@ -27,7 +27,7 @@ class HomeScreen extends StatelessWidget {
           false,
       builder: (context, state) {
         return state.maybeWhen(
-          data: (value) => Center(child: Text(value.toString())),
+          data: (value) => Center(child: Text(value)),
           error: (message) => Center(child: Text(message)),
           loading: () => const Center(child: CircularProgressIndicator()),
           orElse: () => const SizedBox.shrink(),
