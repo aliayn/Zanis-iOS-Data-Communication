@@ -1,0 +1,26 @@
+platform :ios, '12.0'
+
+target 'Runner' do
+  use_frameworks!
+  
+  # Flutter dependencies
+  pod 'Flutter', :configuration => 'Debug'
+  
+  # PeerTalk integration (specific version recommended)
+  pod 'Flipper-PeerTalk', '~> 0.0.4', :configuration => 'Debug'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      # Match deployment target with Flutter requirements
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+      
+      # Disable Bitcode for Flutter compatibility
+      config.build_settings['ENABLE_BITCODE'] = 'NO'
+      
+      # Required for PeerTalk compilation
+      config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+    end
+  end
+end
