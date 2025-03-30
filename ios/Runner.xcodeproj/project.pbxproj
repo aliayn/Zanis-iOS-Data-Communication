@@ -12,6 +12,7 @@
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		4166B4CF2D95F17600E8EB22 /* MFIDeviceDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4166B4CE2D95F17600E8EB22 /* MFIDeviceDetector.swift */; };
 		417D70E02D82DDDB00AF8398 /* FlutterStreamHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417D70DF2D82DDD100AF8398 /* FlutterStreamHandler.swift */; };
+		41F055522D995A830071D010 /* PeerTalkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41F055512D995A790071D010 /* PeerTalkManager.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
@@ -51,6 +52,7 @@
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		4166B4CE2D95F17600E8EB22 /* MFIDeviceDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MFIDeviceDetector.swift; sourceTree = "<group>"; };
 		417D70DF2D82DDD100AF8398 /* FlutterStreamHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlutterStreamHandler.swift; sourceTree = "<group>"; };
+		41F055512D995A790071D010 /* PeerTalkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerTalkManager.swift; sourceTree = "<group>"; };
 		5B5D7520B2A8E53726E9C819 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -93,7 +95,6 @@
 				CA2AF3F2E864DFDC470D241B /* Pods-Runner.release.xcconfig */,
 				5B5D7520B2A8E53726E9C819 /* Pods-Runner.profile.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -140,6 +141,7 @@
 		97C146F01CF9000F007C117D /* Runner */ = {
 			isa = PBXGroup;
 			children = (
+				41F055512D995A790071D010 /* PeerTalkManager.swift */,
 				4166B4CE2D95F17600E8EB22 /* MFIDeviceDetector.swift */,
 				417D70DF2D82DDD100AF8398 /* FlutterStreamHandler.swift */,
 				97C146FA1CF9000F007C117D /* Main.storyboard */,
@@ -342,6 +344,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				41F055522D995A830071D010 /* PeerTalkManager.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				4166B4CF2D95F17600E8EB22 /* MFIDeviceDetector.swift in Sources */,
 				417D70E02D82DDDB00AF8398 /* FlutterStreamHandler.swift in Sources */,

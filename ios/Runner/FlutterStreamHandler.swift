@@ -4,45 +4,84 @@
 //
 //  Created by Ali Aynechian on 12/23/1403 AP.
 //
-
 import Flutter
 
 final class DataService {
     static let shared = DataService()
-
     private init() {}
-
-    public var eventSink : FlutterEventSink?
-
-    func sendDeviceInfo(vid: String?, pid: String?) {
-        let data :[String: Any] = [
-            "timestamp": Date().timeIntervalSince1970,
-            "vid": vid ?? "Unknown",
-            "pid": pid ?? "Unknown"
-        ]
-        self.eventSink?(data)
+    
+    public var eventSink: FlutterEventSink?
+    private let peerTalkManager = PeerTalkManager.shared
+    
+    func startMonitoring() {
+        peerTalkManager.delegate = self
+        peerTalkManager.startServer()
     }
+    
+    func sendDeviceInfo(vid: String?, pid: String?) {
+        let deviceInfo: [String: Any] = [
+            "timestamp": Date().timeIntervalSince1970,
+            "vid": vid ?? "unknown",
+            "pid": pid ?? "unknown",
+            "type": "deviceInfo"
+        ]
+        sendEvent(deviceInfo)
+    }
+    
+    private func sendEvent(_ data: [String: Any]) {
+        DispatchQueue.main.async { [weak self] in
+            self?.eventSink?(data)
+        }
+    }
+}
 
+extension DataService: PeerTalkManagerDelegate {
+    func didReceiveData(_ data: Data) {
+        // Validate data conversion
+        guard data.count > 0 else {
+            print("⚠️ Received empty data packet")
+            return
+        }
+        
+        let payload: [String: Any] = [
+            "timestamp": Date().timeIntervalSince1970,
+            "data": data.base64EncodedString(),
+            "type": "data"
+        ]
+        print("📤 Forwarding data packet: \(payload["timestamp"]!)")
+        sendEvent(payload)
+    }
+    
+    func connectionStatusChanged(_ isConnected: Bool) {
+        let status: [String: Any] = [
+            "timestamp": Date().timeIntervalSince1970,
+            "connected": isConnected,
+            "type": "status"
+        ]
+        print("🌐 Connection status changed: \(isConnected ? "Connected" : "Disconnected")")
+        sendEvent(status)
+    }
 }
 
 class StreamHandlerImpl: NSObject, FlutterStreamHandler {
-
-    /// Registers the stream handler for the event channel
+    
     static func register(registrar: FlutterPluginRegistrar) {
-        let eventChannel = FlutterEventChannel(name: "zanis_ios_data_communication", binaryMessenger: registrar.messenger())
-        let streamHandler = StreamHandlerImpl()
-        eventChannel.setStreamHandler(streamHandler)
+        let eventChannel = FlutterEventChannel(
+            name: "device_channel",
+            binaryMessenger: registrar.messenger()
+        )
+        eventChannel.setStreamHandler(StreamHandlerImpl())
     }
-
-    @objc func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    
+    func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         DataService.shared.eventSink = events
-        MFiDeviceManager.shared.startMonitoring()
-        return nil
-    }
-
-    @objc func onCancel(withArguments arguments: Any?) -> FlutterError? {
-        DataService.shared.eventSink = nil
+        DataService.shared.startMonitoring()
         return nil
     }
     
+    func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        DataService.shared.eventSink = nil
+        PeerTalkManager.shared.stopServer()
+        return nil
+    }
 }
