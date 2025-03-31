@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import peertalk
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -7,6 +8,11 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    let controller : FlutterViewController = window?.rootViewController as! FlutterViewController
+    
+    // Set up PeerTalk method channel
+    PeerTalkManager.shared.setupFlutterMethodChannel(controller.binaryMessenger)
+    
     GeneratedPluginRegistrant.register(with: self)
 
     // register the stream handler

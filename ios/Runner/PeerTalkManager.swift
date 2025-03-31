@@ -7,6 +7,7 @@
 
 import Foundation
 import peertalk
+import Flutter
 
 protocol PeerTalkManagerDelegate: AnyObject {
     func didReceiveData(_ data: Data)
@@ -14,14 +15,17 @@ protocol PeerTalkManagerDelegate: AnyObject {
 }
 
 final class PeerTalkManager: NSObject, PTChannelDelegate {
+    private var flutterMethodChannel: FlutterMethodChannel?
+    
     func ioFrameChannel(_ channel: PTChannel!, didReceiveFrameOfType type: UInt32, tag: UInt32, payload: PTData!) {
         // Handle different frame types
         switch type {
         case 101:  // Match the type we use for data transmission
             let data = Data(bytes: payload.data, count: Int(payload.length))
             delegate?.didReceiveData(data)
+            logToFlutter("Received data frame of size: \(data.count) bytes")
         default:
-            print("Received unexpected frame type: \(type)")
+            logToFlutter("Received unexpected frame type: \(type)")
             break
         }
     }
@@ -31,17 +35,52 @@ final class PeerTalkManager: NSObject, PTChannelDelegate {
     
     private var serverChannel: PTChannel?
     private var peerChannel: PTChannel?
-    private let port: in_port_t = 2345
+    private let basePort: in_port_t = 2345
+    private var currentPort: in_port_t = 2345
+    
+    func setupFlutterMethodChannel(_ messenger: FlutterBinaryMessenger) {
+        flutterMethodChannel = FlutterMethodChannel(name: "com.zanis.peertalk/logs", binaryMessenger: messenger)
+    }
+    
+    private func logToFlutter(_ message: String) {
+        DispatchQueue.main.async {
+            self.flutterMethodChannel?.invokeMethod("log", arguments: message)
+        }
+    }
+    
+    private func tryNextPort() -> in_port_t {
+        currentPort += 1
+        if currentPort > basePort + 10 { // Try up to 10 ports
+            currentPort = basePort
+        }
+        return currentPort
+    }
     
     func startServer() {
+        // First, ensure any existing server is stopped
+        stopServer()
+        
         serverChannel = PTChannel(delegate: self)
-        serverChannel?.listen(onPort: port, iPv4Address: INADDR_LOOPBACK) { [weak self] error in
-            if let error = error {
-                print("🔴 Server start failed: \(error)")
-            } else {
-                print("🟢 Server listening on port \(self?.port ?? 0)")
+        logToFlutter("Server channel initialized")
+        
+        func tryStartServer() {
+            serverChannel?.listen(onPort: currentPort, iPv4Address: INADDR_LOOPBACK) { [weak self] error in
+                if let error = error {
+                    if (error as NSError).domain == NSPOSIXErrorDomain && (error as NSError).code == 48 {
+                        // Port is in use, try next port
+                        self?.currentPort = self?.tryNextPort() ?? self?.basePort ?? 2345
+                        self?.logToFlutter("Port \(self?.currentPort ?? 0) in use, trying port \(self?.currentPort ?? 0)")
+                        tryStartServer()
+                    } else {
+                        self?.logToFlutter("🔴 Server start failed: \(error)")
+                    }
+                } else {
+                    self?.logToFlutter("🟢 Server listening on port \(self?.currentPort ?? 0)")
+                }
             }
         }
+        
+        tryStartServer()
     }
     
     func stopServer() {
@@ -49,6 +88,7 @@ final class PeerTalkManager: NSObject, PTChannelDelegate {
         peerChannel?.close()
         serverChannel = nil
         peerChannel = nil
+        logToFlutter("Server stopped")
     }
     
     func sendData(_ data: Data) {
@@ -62,6 +102,7 @@ final class PeerTalkManager: NSObject, PTChannelDelegate {
                 withPayload: dispatchData as __DispatchData,
                 callback: nil
             )
+            logToFlutter("Sent data frame of size: \(data.count) bytes")
         }
     }
     
@@ -71,12 +112,12 @@ final class PeerTalkManager: NSObject, PTChannelDelegate {
         peerChannel = otherChannel
         peerChannel?.delegate = self
         delegate?.connectionStatusChanged(true)
-        print("🔗 Device connected")
+        logToFlutter("🔗 Device connected")
     }
     
     func channelDidEnd(_ channel: PTChannel, error: Error?) {
         delegate?.connectionStatusChanged(false)
         peerChannel = nil
-        print("🔌 Device disconnected")
+        logToFlutter("🔌 Device disconnected")
     }
 }

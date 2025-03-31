@@ -79,7 +79,7 @@ class ErrorHandler with AppLogger {
 
     runZonedGuarded(() async {
       WidgetsFlutterBinding.ensureInitialized();
-      AppService.init();
+      await AppService.init();
       runApp(app);
     }, ((error, stack) {
       //add firebase crashlytics
