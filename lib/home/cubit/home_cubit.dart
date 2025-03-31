@@ -14,13 +14,36 @@ class HomeCubit extends Cubit<HomeState> {
   }
 
   void init() {
-    final dataStream = _iosDataSource.stream;
-    emit(HomeState.loading());
-    dataStream.listen((data) {
-      final value = IOSDataAdapter.adaptData(data);
-      emit(HomeState.data(value));
-    }).onError((error) {
-      emit(HomeState.error(error.toString()));
-    });
+    emit(HomeState.initial());
+
+    // Listen to data events
+    _iosDataSource.dataStream.listen(
+      (data) {
+        emit(HomeState.data(data));
+      },
+      onError: (error) {
+        emit(HomeState.error(error.toString()));
+      },
+    );
+
+    // Listen to connection status
+    _iosDataSource.connectionStream.listen(
+      (isConnected) {
+        emit(HomeState.connectionStatus(isConnected));
+      },
+      onError: (error) {
+        emit(HomeState.error(error.toString()));
+      },
+    );
+
+    // Listen to device info
+    _iosDataSource.deviceInfoStream.listen(
+      (deviceInfo) {
+        emit(HomeState.deviceInfo(deviceInfo));
+      },
+      onError: (error) {
+        emit(HomeState.error(error.toString()));
+      },
+    );
   }
 }

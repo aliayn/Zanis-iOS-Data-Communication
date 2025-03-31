@@ -26,11 +26,14 @@ class HomeScreen extends StatelessWidget {
           ) ??
           false,
       builder: (context, state) {
-        return state.maybeWhen(
-          data: (value) => Center(child: Text(value)),
-          error: (message) => Center(child: Text(message)),
-          loading: () => const Center(child: CircularProgressIndicator()),
-          orElse: () => const SizedBox.shrink(),
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: state.maybeWhen(
+            data: (value) => Center(child: Text(value)),
+            error: (message) => Center(child: Text(message)),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            orElse: () => const Center(child: Text('Waiting for data...')),
+          ),
         );
       },
     );

@@ -1,6 +1,55 @@
 import 'package:flutter/services.dart';
 import 'package:injectable/injectable.dart';
 
+/// Event types that can be received from iOS
+enum IOSEventType { data, status, deviceInfo }
+
+/// Data model for iOS events
+class IOSEvent {
+  final DateTime timestamp;
+  final IOSEventType type;
+  final dynamic payload;
+
+  IOSEvent({
+    required this.timestamp,
+    required this.type,
+    required this.payload,
+  });
+
+  factory IOSEvent.fromPlatform(Map<dynamic, dynamic> rawData) {
+    final timestamp = DateTime.fromMillisecondsSinceEpoch((rawData['timestamp'] * 1000).toInt());
+
+    switch (rawData['type']) {
+      case 'data':
+        return IOSEvent(
+          timestamp: timestamp,
+          type: IOSEventType.data,
+          payload: rawData['data'], // base64 encoded string
+        );
+
+      case 'status':
+        return IOSEvent(
+          timestamp: timestamp,
+          type: IOSEventType.status,
+          payload: rawData['connected'] as bool,
+        );
+
+      case 'deviceInfo':
+        return IOSEvent(
+          timestamp: timestamp,
+          type: IOSEventType.deviceInfo,
+          payload: {
+            'vid': rawData['vid'] as String,
+            'pid': rawData['pid'] as String,
+          },
+        );
+
+      default:
+        throw FormatException('Unknown event type: ${rawData['type']}');
+    }
+  }
+}
+
 /// Data source for iOS data communication
 ///
 /// This class is responsible for receiving data from the iOS app
@@ -11,12 +60,22 @@ import 'package:injectable/injectable.dart';
 /// Singleton class
 @singleton
 class IOSDataSource {
-  static const EventChannel _streamChannel =
-      EventChannel('zanis_ios_data_communication');
+  static const EventChannel _streamChannel = EventChannel('device_channel'); // Updated to match iOS channel name
 
-  Stream<Map<dynamic, dynamic>> get stream => _streamChannel
-      .receiveBroadcastStream()
-      .map((data) => data as Map<dynamic, dynamic>);
+  /// Stream of parsed iOS events
+  Stream<IOSEvent> get eventStream =>
+      _streamChannel.receiveBroadcastStream().map((data) => data as Map<dynamic, dynamic>).map(IOSEvent.fromPlatform);
+
+  /// Convenience streams for specific event types
+  Stream<String> get dataStream =>
+      eventStream.where((event) => event.type == IOSEventType.data).map((event) => event.payload as String);
+
+  Stream<bool> get connectionStream =>
+      eventStream.where((event) => event.type == IOSEventType.status).map((event) => event.payload as bool);
+
+  Stream<Map<String, String>> get deviceInfoStream => eventStream
+      .where((event) => event.type == IOSEventType.deviceInfo)
+      .map((event) => event.payload as Map<String, String>);
 }
 
 /// Adapter for iOS data communication
