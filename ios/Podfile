@@ -7,7 +7,7 @@ target 'Runner' do
   pod 'Flutter', :configuration => 'Debug'
   
   # PeerTalk integration (specific version recommended)
-  pod 'Flipper-PeerTalk', '~> 0.0.4', :configuration => 'Debug'
+  pod 'Flipper-PeerTalk', '~> 0.0.4', :modular_headers => true
 end
 
 post_install do |installer|
@@ -21,6 +21,12 @@ post_install do |installer|
       
       # Required for PeerTalk compilation
       config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+      
+      # Enable modules for Objective-C compatibility
+      config.build_settings['CLANG_ENABLE_MODULES'] = 'YES'
+      
+      # Enable Objective-C modules
+      config.build_settings['DEFINES_MODULE'] = 'YES'
     end
   end
 end
