@@ -1,10 +1,10 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
+import 'dart:async';
 
-/// Event types that can be received from iOS
 enum IOSEventType { data, status, deviceInfo }
 
-/// Data model for iOS events
 class IOSEvent {
   final DateTime timestamp;
   final IOSEventType type;
@@ -24,7 +24,7 @@ class IOSEvent {
         return IOSEvent(
           timestamp: timestamp,
           type: IOSEventType.data,
-          payload: rawData['data'], // base64 encoded string
+          payload: rawData['data'],
         );
 
       case 'status':
@@ -50,51 +50,61 @@ class IOSEvent {
   }
 }
 
-/// Data source for iOS data communication
-///
-/// This class is responsible for receiving data from the iOS app
-/// and sending data to the iOS app
-///
-/// It uses the EventChannel to receive data from the iOS app
-/// and the MethodChannel to send data to the iOS app
-/// Singleton class
 @singleton
 class IOSDataSource {
-  static const EventChannel _streamChannel = EventChannel('device_channel'); // Updated to match iOS channel name
+  static const EventChannel _streamChannel = EventChannel('com.zanis.peertalk/device_info');
+  static const MethodChannel _streamLogChannel = MethodChannel('com.zanis.peertalk/logs');
+  final StreamController<String> _logController = StreamController<String>.broadcast();
 
-  /// Stream of parsed iOS events
-  Stream<IOSEvent> get eventStream =>
-      _streamChannel.receiveBroadcastStream().map((data) => data as Map<dynamic, dynamic>).map(IOSEvent.fromPlatform);
+  IOSDataSource() {
+    _setupLogStream();
+  }
 
-  /// Convenience streams for specific event types
-  Stream<String> get dataStream =>
-      eventStream.where((event) => event.type == IOSEventType.data).map((event) => event.payload as String);
+  void _setupLogStream() {
+    _streamLogChannel.setMethodCallHandler((call) async {
+      if (call.method == 'log') {
+        final logData = call.arguments as String;
+        debugPrint('Received iOS log: $logData');
+        _logController.add(logData);
+      }
+    });
+  }
 
-  Stream<bool> get connectionStream =>
-      eventStream.where((event) => event.type == IOSEventType.status).map((event) => event.payload as bool);
+  Stream<String> get logStream => _logController.stream;
 
-  Stream<Map<String, String>> get deviceInfoStream => eventStream
-      .where((event) => event.type == IOSEventType.deviceInfo)
-      .map((event) => event.payload as Map<String, String>);
+  Stream<IOSEvent> get eventStream => _streamChannel.receiveBroadcastStream().map((data) {
+        final eventData = data as Map<dynamic, dynamic>;
+        debugPrint('Received iOS event: $eventData');
+        return eventData;
+      }).map(IOSEvent.fromPlatform);
+
+  Stream<String> get dataStream => eventStream.where((event) => event.type == IOSEventType.data).map((event) {
+        final data = event.payload as String;
+        debugPrint('Received iOS data: $data');
+        return data;
+      });
+
+  Stream<bool> get connectionStream => eventStream.where((event) => event.type == IOSEventType.status).map((event) {
+        final status = event.payload as bool;
+        debugPrint('Connection status changed: $status');
+        return status;
+      });
+
+  Stream<Map<String, String>> get deviceInfoStream =>
+      eventStream.where((event) => event.type == IOSEventType.deviceInfo).map((event) {
+        final deviceInfo = event.payload as Map<String, String>;
+        debugPrint('Received device info: $deviceInfo');
+        return deviceInfo;
+      });
 }
 
-/// Adapter for iOS data communication
-///
-/// This class is responsible for adapting the raw platform data to the app's data model
-///
-/// It uses the EventChannel to receive data from the iOS app
-/// and the MethodChannel to send data to the iOS app
-///
 class IOSDataAdapter {
-  // Adapts raw platform data to the app's data model
   static String adaptData(Map<dynamic, dynamic> rawData) {
     try {
-      // Check if 'value' key exists
       if (!rawData.containsKey('value')) {
         throw FormatException('Missing required key: value');
       }
 
-      // Check if the value is an integer
       final value = rawData['value'];
       if (value is! String) {
         throw FormatException('Value is not an integer: $value');

@@ -8,4 +8,5 @@ class HomeState with _$HomeState {
   const factory HomeState.connectionStatus(bool isConnected) = _ConnectionStatus;
   const factory HomeState.deviceInfo(Map<String, String> deviceInfo) = _DeviceInfo;
   const factory HomeState.error(String message) = _Error;
+  const factory HomeState.log(String log) = _Log;
 }

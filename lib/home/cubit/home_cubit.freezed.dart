@@ -24,6 +24,7 @@ mixin _$HomeState {
     required TResult Function(bool isConnected) connectionStatus,
     required TResult Function(Map<String, String> deviceInfo) deviceInfo,
     required TResult Function(String message) error,
+    required TResult Function(String log) log,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -34,6 +35,7 @@ mixin _$HomeState {
     TResult? Function(bool isConnected)? connectionStatus,
     TResult? Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult? Function(String message)? error,
+    TResult? Function(String log)? log,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -44,6 +46,7 @@ mixin _$HomeState {
     TResult Function(bool isConnected)? connectionStatus,
     TResult Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult Function(String message)? error,
+    TResult Function(String log)? log,
     required TResult orElse(),
   }) =>
       throw _privateConstructorUsedError;
@@ -55,6 +58,7 @@ mixin _$HomeState {
     required TResult Function(_ConnectionStatus value) connectionStatus,
     required TResult Function(_DeviceInfo value) deviceInfo,
     required TResult Function(_Error value) error,
+    required TResult Function(_Log value) log,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -65,6 +69,7 @@ mixin _$HomeState {
     TResult? Function(_ConnectionStatus value)? connectionStatus,
     TResult? Function(_DeviceInfo value)? deviceInfo,
     TResult? Function(_Error value)? error,
+    TResult? Function(_Log value)? log,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -75,6 +80,7 @@ mixin _$HomeState {
     TResult Function(_ConnectionStatus value)? connectionStatus,
     TResult Function(_DeviceInfo value)? deviceInfo,
     TResult Function(_Error value)? error,
+    TResult Function(_Log value)? log,
     required TResult orElse(),
   }) =>
       throw _privateConstructorUsedError;
@@ -147,6 +153,7 @@ class _$InitialImpl implements _Initial {
     required TResult Function(bool isConnected) connectionStatus,
     required TResult Function(Map<String, String> deviceInfo) deviceInfo,
     required TResult Function(String message) error,
+    required TResult Function(String log) log,
   }) {
     return initial();
   }
@@ -160,6 +167,7 @@ class _$InitialImpl implements _Initial {
     TResult? Function(bool isConnected)? connectionStatus,
     TResult? Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult? Function(String message)? error,
+    TResult? Function(String log)? log,
   }) {
     return initial?.call();
   }
@@ -173,6 +181,7 @@ class _$InitialImpl implements _Initial {
     TResult Function(bool isConnected)? connectionStatus,
     TResult Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult Function(String message)? error,
+    TResult Function(String log)? log,
     required TResult orElse(),
   }) {
     if (initial != null) {
@@ -190,6 +199,7 @@ class _$InitialImpl implements _Initial {
     required TResult Function(_ConnectionStatus value) connectionStatus,
     required TResult Function(_DeviceInfo value) deviceInfo,
     required TResult Function(_Error value) error,
+    required TResult Function(_Log value) log,
   }) {
     return initial(this);
   }
@@ -203,6 +213,7 @@ class _$InitialImpl implements _Initial {
     TResult? Function(_ConnectionStatus value)? connectionStatus,
     TResult? Function(_DeviceInfo value)? deviceInfo,
     TResult? Function(_Error value)? error,
+    TResult? Function(_Log value)? log,
   }) {
     return initial?.call(this);
   }
@@ -216,6 +227,7 @@ class _$InitialImpl implements _Initial {
     TResult Function(_ConnectionStatus value)? connectionStatus,
     TResult Function(_DeviceInfo value)? deviceInfo,
     TResult Function(_Error value)? error,
+    TResult Function(_Log value)? log,
     required TResult orElse(),
   }) {
     if (initial != null) {
@@ -276,6 +288,7 @@ class _$LoadingImpl implements _Loading {
     required TResult Function(bool isConnected) connectionStatus,
     required TResult Function(Map<String, String> deviceInfo) deviceInfo,
     required TResult Function(String message) error,
+    required TResult Function(String log) log,
   }) {
     return loading();
   }
@@ -289,6 +302,7 @@ class _$LoadingImpl implements _Loading {
     TResult? Function(bool isConnected)? connectionStatus,
     TResult? Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult? Function(String message)? error,
+    TResult? Function(String log)? log,
   }) {
     return loading?.call();
   }
@@ -302,6 +316,7 @@ class _$LoadingImpl implements _Loading {
     TResult Function(bool isConnected)? connectionStatus,
     TResult Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult Function(String message)? error,
+    TResult Function(String log)? log,
     required TResult orElse(),
   }) {
     if (loading != null) {
@@ -319,6 +334,7 @@ class _$LoadingImpl implements _Loading {
     required TResult Function(_ConnectionStatus value) connectionStatus,
     required TResult Function(_DeviceInfo value) deviceInfo,
     required TResult Function(_Error value) error,
+    required TResult Function(_Log value) log,
   }) {
     return loading(this);
   }
@@ -332,6 +348,7 @@ class _$LoadingImpl implements _Loading {
     TResult? Function(_ConnectionStatus value)? connectionStatus,
     TResult? Function(_DeviceInfo value)? deviceInfo,
     TResult? Function(_Error value)? error,
+    TResult? Function(_Log value)? log,
   }) {
     return loading?.call(this);
   }
@@ -345,6 +362,7 @@ class _$LoadingImpl implements _Loading {
     TResult Function(_ConnectionStatus value)? connectionStatus,
     TResult Function(_DeviceInfo value)? deviceInfo,
     TResult Function(_Error value)? error,
+    TResult Function(_Log value)? log,
     required TResult orElse(),
   }) {
     if (loading != null) {
@@ -431,6 +449,7 @@ class _$DataImpl implements _Data {
     required TResult Function(bool isConnected) connectionStatus,
     required TResult Function(Map<String, String> deviceInfo) deviceInfo,
     required TResult Function(String message) error,
+    required TResult Function(String log) log,
   }) {
     return data(this.data);
   }
@@ -444,6 +463,7 @@ class _$DataImpl implements _Data {
     TResult? Function(bool isConnected)? connectionStatus,
     TResult? Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult? Function(String message)? error,
+    TResult? Function(String log)? log,
   }) {
     return data?.call(this.data);
   }
@@ -457,6 +477,7 @@ class _$DataImpl implements _Data {
     TResult Function(bool isConnected)? connectionStatus,
     TResult Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult Function(String message)? error,
+    TResult Function(String log)? log,
     required TResult orElse(),
   }) {
     if (data != null) {
@@ -474,6 +495,7 @@ class _$DataImpl implements _Data {
     required TResult Function(_ConnectionStatus value) connectionStatus,
     required TResult Function(_DeviceInfo value) deviceInfo,
     required TResult Function(_Error value) error,
+    required TResult Function(_Log value) log,
   }) {
     return data(this);
   }
@@ -487,6 +509,7 @@ class _$DataImpl implements _Data {
     TResult? Function(_ConnectionStatus value)? connectionStatus,
     TResult? Function(_DeviceInfo value)? deviceInfo,
     TResult? Function(_Error value)? error,
+    TResult? Function(_Log value)? log,
   }) {
     return data?.call(this);
   }
@@ -500,6 +523,7 @@ class _$DataImpl implements _Data {
     TResult Function(_ConnectionStatus value)? connectionStatus,
     TResult Function(_DeviceInfo value)? deviceInfo,
     TResult Function(_Error value)? error,
+    TResult Function(_Log value)? log,
     required TResult orElse(),
   }) {
     if (data != null) {
@@ -597,6 +621,7 @@ class _$ConnectionStatusImpl implements _ConnectionStatus {
     required TResult Function(bool isConnected) connectionStatus,
     required TResult Function(Map<String, String> deviceInfo) deviceInfo,
     required TResult Function(String message) error,
+    required TResult Function(String log) log,
   }) {
     return connectionStatus(isConnected);
   }
@@ -610,6 +635,7 @@ class _$ConnectionStatusImpl implements _ConnectionStatus {
     TResult? Function(bool isConnected)? connectionStatus,
     TResult? Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult? Function(String message)? error,
+    TResult? Function(String log)? log,
   }) {
     return connectionStatus?.call(isConnected);
   }
@@ -623,6 +649,7 @@ class _$ConnectionStatusImpl implements _ConnectionStatus {
     TResult Function(bool isConnected)? connectionStatus,
     TResult Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult Function(String message)? error,
+    TResult Function(String log)? log,
     required TResult orElse(),
   }) {
     if (connectionStatus != null) {
@@ -640,6 +667,7 @@ class _$ConnectionStatusImpl implements _ConnectionStatus {
     required TResult Function(_ConnectionStatus value) connectionStatus,
     required TResult Function(_DeviceInfo value) deviceInfo,
     required TResult Function(_Error value) error,
+    required TResult Function(_Log value) log,
   }) {
     return connectionStatus(this);
   }
@@ -653,6 +681,7 @@ class _$ConnectionStatusImpl implements _ConnectionStatus {
     TResult? Function(_ConnectionStatus value)? connectionStatus,
     TResult? Function(_DeviceInfo value)? deviceInfo,
     TResult? Function(_Error value)? error,
+    TResult? Function(_Log value)? log,
   }) {
     return connectionStatus?.call(this);
   }
@@ -666,6 +695,7 @@ class _$ConnectionStatusImpl implements _ConnectionStatus {
     TResult Function(_ConnectionStatus value)? connectionStatus,
     TResult Function(_DeviceInfo value)? deviceInfo,
     TResult Function(_Error value)? error,
+    TResult Function(_Log value)? log,
     required TResult orElse(),
   }) {
     if (connectionStatus != null) {
@@ -770,6 +800,7 @@ class _$DeviceInfoImpl implements _DeviceInfo {
     required TResult Function(bool isConnected) connectionStatus,
     required TResult Function(Map<String, String> deviceInfo) deviceInfo,
     required TResult Function(String message) error,
+    required TResult Function(String log) log,
   }) {
     return deviceInfo(this.deviceInfo);
   }
@@ -783,6 +814,7 @@ class _$DeviceInfoImpl implements _DeviceInfo {
     TResult? Function(bool isConnected)? connectionStatus,
     TResult? Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult? Function(String message)? error,
+    TResult? Function(String log)? log,
   }) {
     return deviceInfo?.call(this.deviceInfo);
   }
@@ -796,6 +828,7 @@ class _$DeviceInfoImpl implements _DeviceInfo {
     TResult Function(bool isConnected)? connectionStatus,
     TResult Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult Function(String message)? error,
+    TResult Function(String log)? log,
     required TResult orElse(),
   }) {
     if (deviceInfo != null) {
@@ -813,6 +846,7 @@ class _$DeviceInfoImpl implements _DeviceInfo {
     required TResult Function(_ConnectionStatus value) connectionStatus,
     required TResult Function(_DeviceInfo value) deviceInfo,
     required TResult Function(_Error value) error,
+    required TResult Function(_Log value) log,
   }) {
     return deviceInfo(this);
   }
@@ -826,6 +860,7 @@ class _$DeviceInfoImpl implements _DeviceInfo {
     TResult? Function(_ConnectionStatus value)? connectionStatus,
     TResult? Function(_DeviceInfo value)? deviceInfo,
     TResult? Function(_Error value)? error,
+    TResult? Function(_Log value)? log,
   }) {
     return deviceInfo?.call(this);
   }
@@ -839,6 +874,7 @@ class _$DeviceInfoImpl implements _DeviceInfo {
     TResult Function(_ConnectionStatus value)? connectionStatus,
     TResult Function(_DeviceInfo value)? deviceInfo,
     TResult Function(_Error value)? error,
+    TResult Function(_Log value)? log,
     required TResult orElse(),
   }) {
     if (deviceInfo != null) {
@@ -935,6 +971,7 @@ class _$ErrorImpl implements _Error {
     required TResult Function(bool isConnected) connectionStatus,
     required TResult Function(Map<String, String> deviceInfo) deviceInfo,
     required TResult Function(String message) error,
+    required TResult Function(String log) log,
   }) {
     return error(message);
   }
@@ -948,6 +985,7 @@ class _$ErrorImpl implements _Error {
     TResult? Function(bool isConnected)? connectionStatus,
     TResult? Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult? Function(String message)? error,
+    TResult? Function(String log)? log,
   }) {
     return error?.call(message);
   }
@@ -961,6 +999,7 @@ class _$ErrorImpl implements _Error {
     TResult Function(bool isConnected)? connectionStatus,
     TResult Function(Map<String, String> deviceInfo)? deviceInfo,
     TResult Function(String message)? error,
+    TResult Function(String log)? log,
     required TResult orElse(),
   }) {
     if (error != null) {
@@ -978,6 +1017,7 @@ class _$ErrorImpl implements _Error {
     required TResult Function(_ConnectionStatus value) connectionStatus,
     required TResult Function(_DeviceInfo value) deviceInfo,
     required TResult Function(_Error value) error,
+    required TResult Function(_Log value) log,
   }) {
     return error(this);
   }
@@ -991,6 +1031,7 @@ class _$ErrorImpl implements _Error {
     TResult? Function(_ConnectionStatus value)? connectionStatus,
     TResult? Function(_DeviceInfo value)? deviceInfo,
     TResult? Function(_Error value)? error,
+    TResult? Function(_Log value)? log,
   }) {
     return error?.call(this);
   }
@@ -1004,6 +1045,7 @@ class _$ErrorImpl implements _Error {
     TResult Function(_ConnectionStatus value)? connectionStatus,
     TResult Function(_DeviceInfo value)? deviceInfo,
     TResult Function(_Error value)? error,
+    TResult Function(_Log value)? log,
     required TResult orElse(),
   }) {
     if (error != null) {
@@ -1022,5 +1064,173 @@ abstract class _Error implements HomeState {
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
   _$$ErrorImplCopyWith<_$ErrorImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$LogImplCopyWith<$Res> {
+  factory _$$LogImplCopyWith(_$LogImpl value, $Res Function(_$LogImpl) then) =
+      __$$LogImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({String log});
+}
+
+/// @nodoc
+class __$$LogImplCopyWithImpl<$Res>
+    extends _$HomeStateCopyWithImpl<$Res, _$LogImpl>
+    implements _$$LogImplCopyWith<$Res> {
+  __$$LogImplCopyWithImpl(_$LogImpl _value, $Res Function(_$LogImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of HomeState
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? log = null,
+  }) {
+    return _then(_$LogImpl(
+      null == log
+          ? _value.log
+          : log // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$LogImpl implements _Log {
+  const _$LogImpl(this.log);
+
+  @override
+  final String log;
+
+  @override
+  String toString() {
+    return 'HomeState.log(log: $log)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$LogImpl &&
+            (identical(other.log, log) || other.log == log));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, log);
+
+  /// Create a copy of HomeState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$LogImplCopyWith<_$LogImpl> get copyWith =>
+      __$$LogImplCopyWithImpl<_$LogImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function() initial,
+    required TResult Function() loading,
+    required TResult Function(String data) data,
+    required TResult Function(bool isConnected) connectionStatus,
+    required TResult Function(Map<String, String> deviceInfo) deviceInfo,
+    required TResult Function(String message) error,
+    required TResult Function(String log) log,
+  }) {
+    return log(this.log);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function()? initial,
+    TResult? Function()? loading,
+    TResult? Function(String data)? data,
+    TResult? Function(bool isConnected)? connectionStatus,
+    TResult? Function(Map<String, String> deviceInfo)? deviceInfo,
+    TResult? Function(String message)? error,
+    TResult? Function(String log)? log,
+  }) {
+    return log?.call(this.log);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function()? initial,
+    TResult Function()? loading,
+    TResult Function(String data)? data,
+    TResult Function(bool isConnected)? connectionStatus,
+    TResult Function(Map<String, String> deviceInfo)? deviceInfo,
+    TResult Function(String message)? error,
+    TResult Function(String log)? log,
+    required TResult orElse(),
+  }) {
+    if (log != null) {
+      return log(this.log);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(_Initial value) initial,
+    required TResult Function(_Loading value) loading,
+    required TResult Function(_Data value) data,
+    required TResult Function(_ConnectionStatus value) connectionStatus,
+    required TResult Function(_DeviceInfo value) deviceInfo,
+    required TResult Function(_Error value) error,
+    required TResult Function(_Log value) log,
+  }) {
+    return log(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(_Initial value)? initial,
+    TResult? Function(_Loading value)? loading,
+    TResult? Function(_Data value)? data,
+    TResult? Function(_ConnectionStatus value)? connectionStatus,
+    TResult? Function(_DeviceInfo value)? deviceInfo,
+    TResult? Function(_Error value)? error,
+    TResult? Function(_Log value)? log,
+  }) {
+    return log?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(_Initial value)? initial,
+    TResult Function(_Loading value)? loading,
+    TResult Function(_Data value)? data,
+    TResult Function(_ConnectionStatus value)? connectionStatus,
+    TResult Function(_DeviceInfo value)? deviceInfo,
+    TResult Function(_Error value)? error,
+    TResult Function(_Log value)? log,
+    required TResult orElse(),
+  }) {
+    if (log != null) {
+      return log(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class _Log implements HomeState {
+  const factory _Log(final String log) = _$LogImpl;
+
+  String get log;
+
+  /// Create a copy of HomeState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$LogImplCopyWith<_$LogImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

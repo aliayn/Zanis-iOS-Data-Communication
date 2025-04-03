@@ -45,5 +45,14 @@ class HomeCubit extends Cubit<HomeState> {
         emit(HomeState.error(error.toString()));
       },
     );
+
+    _iosDataSource.logStream.listen(
+      (log) {
+        emit(HomeState.log(log));
+      },
+      onError: (error) {
+        emit(HomeState.error(error.toString()));
+      },
+    );
   }
 }

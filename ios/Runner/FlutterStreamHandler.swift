@@ -67,7 +67,7 @@ class StreamHandlerImpl: NSObject, FlutterStreamHandler {
     
     static func register(registrar: FlutterPluginRegistrar) {
         let eventChannel = FlutterEventChannel(
-            name: "device_channel",
+            name: "com.zanis.peertalk/device_info",
             binaryMessenger: registrar.messenger()
         )
         eventChannel.setStreamHandler(StreamHandlerImpl())

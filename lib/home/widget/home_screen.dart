@@ -11,7 +11,7 @@ class HomeScreen extends StatelessWidget {
       create: (context) => inject<HomeCubit>(),
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Home'),
+          title: const Text('Zanis Data Communication'),
         ),
         body: _buildBody(),
       ),
