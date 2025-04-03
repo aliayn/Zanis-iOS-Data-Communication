@@ -9,6 +9,9 @@ part 'home_cubit.freezed.dart';
 @injectable
 class HomeCubit extends Cubit<HomeState> {
   final IOSDataSource _iosDataSource;
+  final List<String> _logs = [];
+  static const int _maxLogs = 1000; // Maximum number of logs to keep
+
   HomeCubit(this._iosDataSource) : super(HomeState.initial()) {
     init();
   }
@@ -48,11 +51,19 @@ class HomeCubit extends Cubit<HomeState> {
 
     _iosDataSource.logStream.listen(
       (log) {
-        emit(HomeState.log(log));
+        _addLog(log);
       },
       onError: (error) {
         emit(HomeState.error(error.toString()));
       },
     );
+  }
+
+  void _addLog(String log) {
+    _logs.add(log);
+    if (_logs.length > _maxLogs) {
+      _logs.removeAt(0); // Remove oldest log if we exceed the limit
+    }
+    emit(HomeState.logs(List.from(_logs)));
   }
 }
