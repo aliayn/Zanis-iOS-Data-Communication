@@ -75,7 +75,8 @@ final class PeerTalkManager: NSObject, PTChannelDelegate {
                         self?.logToFlutter("🔴 Server start failed: \(error)")
                     }
                 } else {
-                    self?.logToFlutter("🟢 Server listening on port \(self?.currentPort ?? 0)")
+                    let ipAddress = "127.0.0.1" // INADDR_LOOPBACK
+                    self?.logToFlutter("🟢 Server listening on IP: \(ipAddress), Port: \(self?.currentPort ?? 0)")
                 }
             }
         }
@@ -112,7 +113,11 @@ final class PeerTalkManager: NSObject, PTChannelDelegate {
         peerChannel = otherChannel
         peerChannel?.delegate = self
         delegate?.connectionStatusChanged(true)
-        logToFlutter("🔗 Device connected")
+        
+        // Log connection details
+        let ipAddress = address.addressString ?? "unknown"
+        let port = address.port
+        logToFlutter("🔗 Device connected from IP: \(ipAddress), Port: \(port)")
     }
     
     func channelDidEnd(_ channel: PTChannel, error: Error?) {
