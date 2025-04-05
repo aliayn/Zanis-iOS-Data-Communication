@@ -113,11 +113,7 @@ final class PeerTalkManager: NSObject, PTChannelDelegate {
         peerChannel = otherChannel
         peerChannel?.delegate = self
         delegate?.connectionStatusChanged(true)
-        
-        // Log connection details
-        let ipAddress = address.addressString ?? "unknown"
-        let port = address.port
-        logToFlutter("🔗 Device connected from IP: \(ipAddress), Port: \(port)")
+        logToFlutter("🔗 Device connected)")
     }
     
     func channelDidEnd(_ channel: PTChannel, error: Error?) {

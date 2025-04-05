@@ -10,14 +10,14 @@ import peertalk
   ) -> Bool {
     let controller : FlutterViewController = window?.rootViewController as! FlutterViewController
     
-    // Set up PeerTalk method channel
+    // Set up PeerTalk method channel for logs
     PeerTalkManager.shared.setupFlutterMethodChannel(controller.binaryMessenger)
     
     GeneratedPluginRegistrant.register(with: self)
 
-    // register the stream handler
+    // Register the stream handler for device info and data communication
     let register = self.registrar(forPlugin: "zanis_ios_data_communication")
-      StreamHandlerImpl.register(registrar: register!)
+    StreamHandlerImpl.register(registrar: register!)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
