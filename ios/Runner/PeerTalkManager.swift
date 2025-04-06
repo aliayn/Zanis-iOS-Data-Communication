@@ -6,52 +6,52 @@
 //
 
 import Foundation
-import peertalk
 import Flutter
+import Network
 
 protocol PeerTalkManagerDelegate: AnyObject {
     func didReceiveData(_ data: Data)
     func connectionStatusChanged(_ isConnected: Bool)
 }
 
-final class PeerTalkManager: NSObject, PTChannelDelegate {
-    private var flutterMethodChannel: FlutterMethodChannel?
-    
-    func ioFrameChannel(_ channel: PTChannel!, didReceiveFrameOfType type: UInt32, tag: UInt32, payload: PTData!) {
-        // Handle different frame types
-        switch type {
-        case 101:  // Match the type we use for data transmission
-            let data = Data(bytes: payload.data, count: Int(payload.length))
-            delegate?.didReceiveData(data)
-            logToFlutter("Received data frame of size: \(data.count) bytes")
-        default:
-            logToFlutter("Received unexpected frame type: \(type)")
-            break
-        }
-    }
-    
+final class PeerTalkManager: NSObject {
     static let shared = PeerTalkManager()
     weak var delegate: PeerTalkManagerDelegate?
     
-    private var serverChannel: PTChannel?
-    private var peerChannel: PTChannel?
-    private let basePort: in_port_t = 2345
-    private var currentPort: in_port_t = 2345
+    private var flutterMethodChannel: FlutterMethodChannel?
+    private var listener: NWListener?
+    private var connection: NWConnection?
+    private let basePort: UInt16 = 2347
+    private var currentPort: UInt16 = 2347
+    private var isConnected = false
+    private var isServerRunning = false
+    private var retryCount = 0
+    private let maxRetries = 3
     
     func setupFlutterMethodChannel(_ messenger: FlutterBinaryMessenger) {
         flutterMethodChannel = FlutterMethodChannel(name: "com.zanis.peertalk/logs", binaryMessenger: messenger)
+        // Start server automatically when Flutter channel is set up
+        startServer()
     }
     
     private func logToFlutter(_ message: String) {
         DispatchQueue.main.async {
             self.flutterMethodChannel?.invokeMethod("log", arguments: message)
+            print("TCP Server: \(message)") // Also print to console for debugging
         }
     }
     
-    private func tryNextPort() -> in_port_t {
+    private func tryNextPort() -> UInt16 {
         currentPort += 1
         if currentPort > basePort + 10 { // Try up to 10 ports
             currentPort = basePort
+            retryCount += 1
+            if retryCount >= maxRetries {
+                logToFlutter("⚠️ Maximum retry attempts reached. Please restart the app.")
+                stopServer()
+                return currentPort
+            }
+            logToFlutter("⚠️ All ports tried, starting over from base port")
         }
         return currentPort
     }
@@ -60,23 +60,83 @@ final class PeerTalkManager: NSObject, PTChannelDelegate {
         // First, ensure any existing server is stopped
         stopServer()
         
-        serverChannel = PTChannel(delegate: self)
-        logToFlutter("Server channel initialized")
+        // Reset retry count
+        retryCount = 0
+        
+        // Create TCP listener
+        let parameters = NWParameters.tcp
+        parameters.allowLocalEndpointReuse = true
         
         func tryStartServer() {
-            serverChannel?.listen(onPort: currentPort, iPv4Address: INADDR_LOOPBACK) { [weak self] error in
-                if let error = error {
-                    if (error as NSError).domain == NSPOSIXErrorDomain && (error as NSError).code == 48 {
-                        // Port is in use, try next port
-                        self?.currentPort = self?.tryNextPort() ?? self?.basePort ?? 2345
-                        self?.logToFlutter("Port \(self?.currentPort ?? 0) in use, trying port \(self?.currentPort ?? 0)")
-                        tryStartServer()
-                    } else {
-                        self?.logToFlutter("🔴 Server start failed: \(error)")
+            do {
+                // Add a small delay before trying the next port
+                if retryCount > 0 {
+                    Thread.sleep(forTimeInterval: 1.0)
+                }
+                
+                listener = try NWListener(using: parameters, on: NWEndpoint.Port(integerLiteral: currentPort))
+                
+                // Set up state handler
+                listener?.stateUpdateHandler = { [weak self] state in
+                    guard let self = self else { return }
+                    
+                    switch state {
+                    case .ready:
+                        self.isServerRunning = true
+                        self.retryCount = 0  // Reset retry count on success
+                        self.logToFlutter("🟢 TCP Server listening on port \(self.currentPort)")
+                    case .failed(let error):
+                        // Check if the error is due to port being in use
+                        if case .posix(let posixError) = error, posixError.rawValue == 48 {
+                            // Port is in use, try next port
+                            self.currentPort = self.tryNextPort()
+                            if self.retryCount < self.maxRetries {
+                                self.logToFlutter("Port \(self.currentPort) in use, trying port \(self.currentPort)")
+                                tryStartServer()
+                            }
+                        } else {
+                            self.logToFlutter("🔴 TCP Server failed: \(error)")
+                            self.isServerRunning = false
+                        }
+                    case .cancelled:
+                        self.logToFlutter("TCP Server cancelled")
+                        self.isServerRunning = false
+                    default:
+                        break
                     }
-                } else {
-                    let ipAddress = "127.0.0.1" // INADDR_LOOPBACK
-                    self?.logToFlutter("🟢 Server listening on IP: \(ipAddress), Port: \(self?.currentPort ?? 0)")
+                }
+                
+                // Set up new connection handler
+                listener?.newConnectionHandler = { [weak self] connection in
+                    guard let self = self else { return }
+                    
+                    // Close existing connection if any
+                    self.connection?.cancel()
+                    
+                    // Store new connection
+                    self.connection = connection
+                    self.isConnected = true
+                    self.delegate?.connectionStatusChanged(true)
+                    self.logToFlutter("🔗 New client connected")
+                    
+                    // Set up receive handler
+                    self.receiveData()
+                    
+                    // Start the connection
+                    connection.start(queue: .main)
+                }
+                
+                // Start the listener
+                listener?.start(queue: .main)
+                
+            } catch {
+                logToFlutter("🔴 Failed to create TCP server: \(error)")
+                isServerRunning = false
+                
+                // Try next port on error
+                if retryCount < maxRetries {
+                    currentPort = tryNextPort()
+                    tryStartServer()
                 }
             }
         }
@@ -85,40 +145,71 @@ final class PeerTalkManager: NSObject, PTChannelDelegate {
     }
     
     func stopServer() {
-        serverChannel?.close()
-        peerChannel?.close()
-        serverChannel = nil
-        peerChannel = nil
+        if isConnected {
+            delegate?.connectionStatusChanged(false)
+            isConnected = false
+        }
+        
+        connection?.cancel()
+        listener?.cancel()
+        connection = nil
+        listener = nil
+        isServerRunning = false
+        retryCount = 0
         logToFlutter("Server stopped")
     }
     
-    func sendData(_ data: Data) {
-        data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) in
-            let dispatchData = DispatchData(
-                bytes: buffer
-            )
-            peerChannel?.sendFrame(
-                ofType: 101,
-                tag: PTFrameNoTag,
-                withPayload: dispatchData as __DispatchData,
-                callback: nil
-            )
-            logToFlutter("Sent data frame of size: \(data.count) bytes")
+    private func receiveData() {
+        connection?.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                self.logToFlutter("❌ Receive error: \(error)")
+                self.handleConnectionError()
+                return
+            }
+            
+            if let data = content {
+                self.logToFlutter("📥 Received: \(String(data: data, encoding: .utf8) ?? "binary data")")
+                self.delegate?.didReceiveData(data)
+                
+                // Send acknowledgment
+                let response = "Message received: \(String(data: data, encoding: .utf8) ?? "binary data")"
+                self.sendData(response.data(using: .utf8)!)
+            }
+            
+            if !isComplete {
+                // Continue receiving
+                self.receiveData()
+            } else {
+                self.logToFlutter("Connection closed by client")
+                self.handleConnectionError()
+            }
         }
     }
     
-    // MARK: - PTChannelDelegate
-    func channel(_ channel: PTChannel, didAcceptConnection otherChannel: PTChannel, from address: PTAddress) {
-        peerChannel?.close()
-        peerChannel = otherChannel
-        peerChannel?.delegate = self
-        delegate?.connectionStatusChanged(true)
-        logToFlutter("🔗 Device connected)")
+    private func handleConnectionError() {
+        connection?.cancel()
+        connection = nil
+        if isConnected {
+            isConnected = false
+            delegate?.connectionStatusChanged(false)
+        }
     }
     
-    func channelDidEnd(_ channel: PTChannel, error: Error?) {
-        delegate?.connectionStatusChanged(false)
-        peerChannel = nil
-        logToFlutter("🔌 Device disconnected")
+    func sendData(_ data: Data) {
+        guard let connection = connection else {
+            logToFlutter("⚠️ Cannot send data: No client connected")
+            return
+        }
+        
+        connection.send(content: data, completion: .contentProcessed { [weak self] error in
+            if let error = error {
+                self?.logToFlutter("❌ Failed to send data: \(error)")
+                self?.handleConnectionError()
+            } else {
+                self?.logToFlutter("📤 Sent data: \(String(data: data, encoding: .utf8) ?? "binary data")")
+            }
+        })
     }
 }
