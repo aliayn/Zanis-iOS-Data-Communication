@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'dart:async';
 
-enum IOSEventType { data, status, deviceInfo }
+enum IOSEventType { data, status, deviceInfo, networkInterface }
 
 class IOSEvent {
   final DateTime timestamp;
@@ -42,6 +42,13 @@ class IOSEvent {
             'vid': rawData['vid'] as String,
             'pid': rawData['pid'] as String,
           },
+        );
+
+      case 'networkInterface':
+        return IOSEvent(
+          timestamp: timestamp,
+          type: IOSEventType.networkInterface,
+          payload: rawData['interface'] as String,
         );
 
       default:
@@ -95,6 +102,13 @@ class IOSDataSource {
         final deviceInfo = event.payload as Map<String, String>;
         debugPrint('Received device info: $deviceInfo');
         return deviceInfo;
+      });
+
+  Stream<String> get networkInterfaceStream =>
+      eventStream.where((event) => event.type == IOSEventType.networkInterface).map((event) {
+        final interface = event.payload as String;
+        debugPrint('Network interface changed: $interface');
+        return interface;
       });
 }
 

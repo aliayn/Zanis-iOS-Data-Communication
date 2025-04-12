@@ -12,6 +12,7 @@ import Network
 protocol PeerTalkManagerDelegate: AnyObject {
     func didReceiveData(_ data: Data)
     func connectionStatusChanged(_ isConnected: Bool)
+    func networkInterfaceChanged(_ interface: String)
 }
 
 final class PeerTalkManager: NSObject {
@@ -27,6 +28,7 @@ final class PeerTalkManager: NSObject {
     private var isServerRunning = false
     private var retryCount = 0
     private let maxRetries = 3
+    private var ethernetInterface: String?
     
     func setupFlutterMethodChannel(_ messenger: FlutterBinaryMessenger) {
         flutterMethodChannel = FlutterMethodChannel(name: "com.zanis.peertalk/logs", binaryMessenger: messenger)
@@ -39,6 +41,25 @@ final class PeerTalkManager: NSObject {
             self.flutterMethodChannel?.invokeMethod("log", arguments: message)
             print("TCP Server: \(message)") // Also print to console for debugging
         }
+    }
+    
+    private func findEthernetInterface() -> String? {
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0 else { return nil }
+        defer { freeifaddrs(ifaddr) }
+        
+        var current = ifaddr
+        while current != nil {
+            let interface = current!.pointee
+            if interface.ifa_addr.pointee.sa_family == AF_INET {
+                let name = String(cString: interface.ifa_name)
+                if name.hasPrefix("en") {
+                    return name
+                }
+            }
+            current = interface.ifa_next
+        }
+        return nil
     }
     
     private func tryNextPort() -> UInt16 {
@@ -63,9 +84,24 @@ final class PeerTalkManager: NSObject {
         // Reset retry count
         retryCount = 0
         
-        // Create TCP listener
+        // Find Ethernet interface
+        ethernetInterface = findEthernetInterface()
+        if let interface = ethernetInterface {
+            delegate?.networkInterfaceChanged(interface)
+            logToFlutter("🔌 Found Ethernet interface: \(interface)")
+        } else {
+            logToFlutter("⚠️ No Ethernet interface found")
+            return
+        }
+        
+        // Create TCP listener with Ethernet interface
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
+        
+        // Set interface
+        if let interface = ethernetInterface {
+            parameters.requiredInterface = NWInterface(interface)
+        }
         
         func tryStartServer() {
             do {
@@ -84,7 +120,7 @@ final class PeerTalkManager: NSObject {
                     case .ready:
                         self.isServerRunning = true
                         self.retryCount = 0  // Reset retry count on success
-                        self.logToFlutter("🟢 TCP Server listening on port \(self.currentPort)")
+                        self.logToFlutter("🟢 TCP Server listening on port \(self.currentPort) via \(self.ethernetInterface ?? "unknown")")
                     case .failed(let error):
                         // Check if the error is due to port being in use
                         if case .posix(let posixError) = error, posixError.rawValue == 48 {
@@ -117,7 +153,7 @@ final class PeerTalkManager: NSObject {
                     self.connection = connection
                     self.isConnected = true
                     self.delegate?.connectionStatusChanged(true)
-                    self.logToFlutter("🔗 New client connected")
+                    self.logToFlutter("🔗 New client connected via \(self.ethernetInterface ?? "unknown")")
                     
                     // Set up receive handler
                     self.receiveData()
