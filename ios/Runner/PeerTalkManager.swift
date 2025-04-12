@@ -94,14 +94,9 @@ final class PeerTalkManager: NSObject {
             return
         }
         
-        // Create TCP listener with Ethernet interface
+        // Create TCP listener
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
-        
-        // Set interface
-        if let interface = ethernetInterface {
-            parameters.requiredInterface = NWInterface(interface)
-        }
         
         func tryStartServer() {
             do {
@@ -110,6 +105,7 @@ final class PeerTalkManager: NSObject {
                     Thread.sleep(forTimeInterval: 1.0)
                 }
                 
+                // Create listener with port
                 listener = try NWListener(using: parameters, on: NWEndpoint.Port(integerLiteral: currentPort))
                 
                 // Set up state handler
