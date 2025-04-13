@@ -28,7 +28,7 @@ class MFiDeviceManager: NSObject {
     DataService.shared.sendDeviceInfo(vid: vid, pid: pid)
   }
 
-  private func extractVIDPID(from accessory: EAAccessory) -> (vid: String?, pid: String?) {
+  public func extractVIDPID(from accessory: EAAccessory) -> (vid: String?, pid: String?) {
     for protocolString in accessory.protocolStrings {
       let components = protocolString.components(separatedBy: ".")
       for component in components {
