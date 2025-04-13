@@ -1,20 +1,3 @@
-PODS:
-  - Flipper-PeerTalk (0.0.4)
-  - Flutter (3.13.0)
-
-DEPENDENCIES:
-  - Flipper-PeerTalk (~> 0.0.4)
-  - Flutter
-
-SPEC REPOS:
-  trunk:
-    - Flipper-PeerTalk
-    - Flutter
-
-SPEC CHECKSUMS:
-  Flipper-PeerTalk: 116d8f857dc6ef55c7a5a75ea3ceaafe878aadc9
-  Flutter: 8ff16720b007bae16abfe75ef9fe3ee45ead486a
-
-PODFILE CHECKSUM: e983c391d0e111bdb4e61f6f77fe1789cc2ae80d
+PODFILE CHECKSUM: 98df3a8795cb12ce27cafaf86e97875283cf04f6
 
 COCOAPODS: 1.16.2

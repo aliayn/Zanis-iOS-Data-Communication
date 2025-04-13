@@ -1,6 +1,5 @@
 import Flutter
 import UIKit
-import peertalk
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {

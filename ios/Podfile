@@ -1,32 +1,15 @@
-platform :ios, '12.0'
+# Uncomment the next line to define a global platform for your project
+# platform :ios, '12.0'
 
 target 'Runner' do
+  # Comment the next line if you don't want to use dynamic frameworks
   use_frameworks!
-  
-  # Flutter dependencies
-  pod 'Flutter', :configuration => 'Debug'
-  
-  # PeerTalk integration (specific version recommended)
-  pod 'Flipper-PeerTalk', '~> 0.0.4', :modular_headers => true
-end
 
-post_install do |installer|
-  installer.pods_project.targets.each do |target|
-    target.build_configurations.each do |config|
-      # Match deployment target with Flutter requirements
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
-      
-      # Disable Bitcode for Flutter compatibility
-      config.build_settings['ENABLE_BITCODE'] = 'NO'
-      
-      # Required for PeerTalk compilation
-      config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
-      
-      # Enable modules for Objective-C compatibility
-      config.build_settings['CLANG_ENABLE_MODULES'] = 'YES'
-      
-      # Enable Objective-C modules
-      config.build_settings['DEFINES_MODULE'] = 'YES'
-    end
+  # Pods for Runner
+
+  target 'RunnerTests' do
+    inherit! :search_paths
+    # Pods for testing
   end
+
 end
