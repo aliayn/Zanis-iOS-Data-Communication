@@ -8,6 +8,7 @@
 import Foundation
 import Flutter
 import Network
+import SystemConfiguration
 
 protocol PeerTalkManagerDelegate: AnyObject {
     func didReceiveData(_ data: Data)
@@ -29,9 +30,216 @@ final class PeerTalkManager: NSObject {
     private var retryCount = 0
     private let maxRetries = 3
     private var ethernetInterface: String?
+    private var pathMonitor: NWPathMonitor?
+    private var ethernetPath: NWPath?
+    private var monitorTimer: Timer?
+    
+    // Track interface states
+    private struct InterfaceState: Equatable {
+        let name: String
+        let displayName: String
+        let isUp: Bool
+        let isRunning: Bool
+        let ipAddress: String?
+    }
+    private var knownInterfaces: [InterfaceState] = []
+    
+    private func getInterfaceDisplayName(_ interfaceName: String) -> String {
+        var displayName = interfaceName
+        
+        // Check if this is an Ethernet interface
+        if interfaceName.hasPrefix("en") {
+            if interfaceName == "en0" {
+                displayName = "Wi-Fi"
+            } else {
+                // Any other en* interface is likely an external adapter
+                displayName = "External Network Adapter"
+                
+                // Create a path monitor for this specific interface to get its details
+                let monitor = NWPathMonitor(requiredInterfaceType: .other)
+                monitor.pathUpdateHandler = { [weak self] path in
+                    if let interface = path.availableInterfaces.first(where: { $0.name == interfaceName }) {
+                        // Update display name based on interface properties
+                        var newName = "External Network Adapter"
+                        
+                        // Check if interface supports various speeds
+                        if interface.type == .other {
+                            newName = "USB Network Adapter"
+                        }
+                        
+                        self?.logToFlutter("📡 Interface \(interfaceName) type: \(interface.type)")
+                        
+                        // Update the display name if it's different
+                        if displayName != newName {
+                            displayName = newName
+                            self?.logToFlutter("ℹ️ Updated interface name: \(newName)")
+                        }
+                    }
+                }
+                
+                // Start monitoring on a background queue
+                let queue = DispatchQueue(label: "com.zanis.interfaceMonitor")
+                monitor.start(queue: queue)
+                
+                // Stop monitoring after a brief period
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    monitor.cancel()
+                }
+            }
+        }
+        
+        return displayName
+    }
+    
+    private func startNetworkMonitoring() {
+        logToFlutter("🔄 Starting network monitoring...")
+        
+        // Cancel existing monitor and timer
+        pathMonitor?.cancel()
+        monitorTimer?.invalidate()
+        
+        // Clear known interfaces
+        knownInterfaces.removeAll()
+        
+        // Function to check interfaces
+        let checkInterfaces = { [weak self] in
+            guard let self = self else { return }
+            
+            var addresses: UnsafeMutablePointer<ifaddrs>?
+            guard getifaddrs(&addresses) == 0 else {
+                self.logToFlutter("⚠️ Failed to get interface addresses")
+                return
+            }
+            defer { freeifaddrs(addresses) }
+            
+            // Collect current interfaces
+            var currentInterfaces: [InterfaceState] = []
+            
+            var currentAddr = addresses
+            while currentAddr != nil {
+                let interface = currentAddr!.pointee
+                let interfaceName = String(cString: interface.ifa_name)
+                
+                // Check if this is an Ethernet interface (en1, en2, etc. but not en0 which is usually WiFi)
+                if interfaceName.hasPrefix("en") && interfaceName != "en0" {
+                    // Get interface flags
+                    let flags = Int32(interface.ifa_flags)
+                    let isUp = (flags & IFF_UP) != 0
+                    let isRunning = (flags & IFF_RUNNING) != 0
+                    
+                    // Get IP address if available
+                    var ipAddress: String? = nil
+                    if interface.ifa_addr.pointee.sa_family == UInt8(AF_INET) {
+                        var addr = interface.ifa_addr.pointee
+                        ipAddress = self.getIPAddress(from: &addr)
+                    }
+                    
+                    // Get display name
+                    let displayName = self.getInterfaceDisplayName(interfaceName)
+                    
+                    // Create interface state
+                    let state = InterfaceState(
+                        name: interfaceName,
+                        displayName: displayName,
+                        isUp: isUp,
+                        isRunning: isRunning,
+                        ipAddress: ipAddress
+                    )
+                    currentInterfaces.append(state)
+                }
+                
+                currentAddr = interface.ifa_next
+            }
+            
+            // Check for changes
+            let removedInterfaces = self.knownInterfaces.filter { known in
+                !currentInterfaces.contains { $0.name == known.name }
+            }
+            
+            let newInterfaces = currentInterfaces.filter { current in
+                !self.knownInterfaces.contains { $0.name == current.name }
+            }
+            
+            let changedInterfaces = currentInterfaces.filter { current in
+                if let known = self.knownInterfaces.first(where: { $0.name == current.name }) {
+                    return known != current
+                }
+                return false
+            }
+            
+            // Log removed interfaces
+            for interface in removedInterfaces {
+                self.logToFlutter("❌ USB Ethernet interface disconnected: \(interface.displayName) (\(interface.name))")
+                if interface.name == self.ethernetInterface {
+                    self.ethernetInterface = nil
+                    self.delegate?.networkInterfaceChanged("")
+                }
+            }
+            
+            // Log new interfaces
+            for interface in newInterfaces {
+                self.logToFlutter("🔌 New USB Ethernet interface detected: \(interface.displayName) (\(interface.name))")
+                self.logToFlutter("📡 Interface Status: \(interface.isUp ? "Up" : "Down"), \(interface.isRunning ? "Running" : "Not Running")")
+                if let ip = interface.ipAddress {
+                    self.logToFlutter("🌐 IP Address: \(ip)")
+                } else {
+                    self.logToFlutter("🌐 IP Address: Not Configured")
+                }
+                
+                self.ethernetInterface = interface.name
+                self.delegate?.networkInterfaceChanged(interface.name)
+                
+                // Start server if not running
+                if !self.isServerRunning {
+                    self.logToFlutter("🔄 New Ethernet interface available, starting server...")
+                    self.startServer()
+                }
+            }
+            
+            // Log changed interfaces
+            for interface in changedInterfaces {
+                self.logToFlutter("📝 USB Ethernet interface changed: \(interface.displayName) (\(interface.name))")
+                self.logToFlutter("📡 Interface Status: \(interface.isUp ? "Up" : "Down"), \(interface.isRunning ? "Running" : "Not Running")")
+                if let ip = interface.ipAddress {
+                    self.logToFlutter("🌐 IP Address: \(ip)")
+                } else {
+                    self.logToFlutter("🌐 IP Address: Not Configured")
+                }
+            }
+            
+            // Update known interfaces
+            self.knownInterfaces = currentInterfaces
+        }
+        
+        // Initial check
+        checkInterfaces()
+        
+        // Set up timer to periodically check interfaces
+        monitorTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            checkInterfaces()
+        }
+        
+        logToFlutter("✅ Network monitoring started")
+    }
+    
+    private func getIPAddress(from addr: inout sockaddr) -> String? {
+        var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        if getnameinfo(&addr, socklen_t(addr.sa_len),
+                      &hostname, socklen_t(hostname.count),
+                      nil, 0,
+                      NI_NUMERICHOST) == 0 {
+            return String(cString: hostname)
+        }
+        return nil
+    }
     
     func setupFlutterMethodChannel(_ messenger: FlutterBinaryMessenger) {
+        logToFlutter("🔄 Setting up Flutter method channel...")
         flutterMethodChannel = FlutterMethodChannel(name: "com.zanis.peertalk/logs", binaryMessenger: messenger)
+        
+        // Start monitoring network changes
+        startNetworkMonitoring()
+        
         // Start server automatically when Flutter channel is set up
         startServer()
     }
@@ -84,13 +292,9 @@ final class PeerTalkManager: NSObject {
         // Reset retry count
         retryCount = 0
         
-        // Find Ethernet interface
-        ethernetInterface = findEthernetInterface()
-        if let interface = ethernetInterface {
-            delegate?.networkInterfaceChanged(interface)
-            logToFlutter("🔌 Found Ethernet interface: \(interface)")
-        } else {
-            logToFlutter("⚠️ No Ethernet interface found")
+        // Check if we have an Ethernet interface
+        guard let interface = ethernetInterface else {
+            logToFlutter("⚠️ Cannot start server: No Ethernet interface available")
             return
         }
         
@@ -244,4 +448,12 @@ final class PeerTalkManager: NSObject {
             }
         })
     }
+    
+    deinit {
+        logToFlutter("🛑 Cleaning up PeerTalkManager...")
+        stopServer()
+        pathMonitor?.cancel()
+        monitorTimer?.invalidate()
+    }
 }
+

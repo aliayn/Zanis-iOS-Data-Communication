@@ -61,6 +61,16 @@ extension DataService: PeerTalkManagerDelegate {
         print("🌐 Connection status changed: \(isConnected ? "Connected" : "Disconnected")")
         sendEvent(status)
     }
+    
+    func networkInterfaceChanged(_ interface: String) {
+        let interfaceInfo: [String: Any] = [
+            "timestamp": Date().timeIntervalSince1970,
+            "interface": interface,
+            "type": "networkInterface"
+        ]
+        print("🔌 Network interface changed: \(interface)")
+        sendEvent(interfaceInfo)
+    }
 }
 
 class StreamHandlerImpl: NSObject, FlutterStreamHandler {
