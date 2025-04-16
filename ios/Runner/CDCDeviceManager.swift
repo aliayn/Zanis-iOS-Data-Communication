@@ -10,15 +10,15 @@ import Flutter
 import Network
 import SystemConfiguration
 
-protocol PeerTalkManagerDelegate: AnyObject {
+protocol CDCDeviceManagerDelegate: AnyObject {
     func didReceiveData(_ data: Data)
     func connectionStatusChanged(_ isConnected: Bool)
     func networkInterfaceChanged(_ interface: String)
 }
 
-final class PeerTalkManager: NSObject {
-    static let shared = PeerTalkManager()
-    weak var delegate: PeerTalkManagerDelegate?
+final class CDCDeviceManager: NSObject {
+    static let shared = CDCDeviceManager()
+    weak var delegate: CDCDeviceManagerDelegate?
     
     private var flutterMethodChannel: FlutterMethodChannel?
     private var listener: NWListener?

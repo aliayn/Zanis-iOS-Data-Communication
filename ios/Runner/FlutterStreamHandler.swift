@@ -11,11 +11,10 @@ final class DataService {
     private init() {}
     
     public var eventSink: FlutterEventSink?
-    private let peerTalkManager = PeerTalkManager.shared
     
     func startMonitoring() {
-        peerTalkManager.delegate = self
-        peerTalkManager.startServer()
+        CDCDeviceManager.shared.delegate = self
+        CDCDeviceManager.shared.startServer()
     }
     
     func sendDeviceInfo(vid: String?, pid: String?) {
@@ -35,7 +34,7 @@ final class DataService {
     }
 }
 
-extension DataService: PeerTalkManagerDelegate {
+extension DataService: CDCDeviceManagerDelegate {
     func didReceiveData(_ data: Data) {
         // Validate data conversion
         guard data.count > 0 else {
@@ -91,7 +90,7 @@ class StreamHandlerImpl: NSObject, FlutterStreamHandler {
     
     func onCancel(withArguments arguments: Any?) -> FlutterError? {
         DataService.shared.eventSink = nil
-        PeerTalkManager.shared.stopServer()
+        CDCDeviceManager.shared.stopServer()
         return nil
     }
 }

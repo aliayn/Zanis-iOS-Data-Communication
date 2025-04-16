@@ -11,7 +11,7 @@ import ExternalAccessory
     let controller : FlutterViewController = window?.rootViewController as! FlutterViewController
     
     // Set up PeerTalk method channel for logs
-    PeerTalkManager.shared.setupFlutterMethodChannel(controller.binaryMessenger)
+    CDCDeviceManager.shared.setupFlutterMethodChannel(controller.binaryMessenger)
     
     // Set up MFi Device Detector
     setupMFiDeviceDetector(controller.binaryMessenger)
