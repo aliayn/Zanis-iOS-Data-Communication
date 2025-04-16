@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class EthernetClient:
-    def __init__(self, host="192.168.31.98", port=2355):
+    def __init__(self, host="192.168.31.98", port=2345):
         self.host = host
         self.port = port
         self.socket = None
@@ -93,7 +93,7 @@ def main():
     if len(sys.argv) > 1:
         host = sys.argv[1]
     else:
-        host = "169.254.39.47"  # Default link-local address
+        host = "172.30.0.139"  # Default link-local address
 
     client = EthernetClient(host=host)
 
