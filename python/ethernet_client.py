@@ -11,111 +11,180 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class EthernetClient:
-    def __init__(self, host="192.168.31.98", port=2345):
+def get_local_ip():
+    """Get the local IP address of this machine."""
+    try:
+        # Create a socket to determine the local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Doesn't need to be reachable, just to determine the interface
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception as e:
+        logger.error(f"Error getting local IP: {e}")
+        # Fallback to localhost
+        return "127.0.0.1"
+
+
+class EthernetServer:
+    def __init__(self, host="127.0.0.1", port=2345):
         self.host = host
         self.port = port
-        self.socket = None
-        self.is_connected = False
+        self.server_socket = None
+        self.client_socket = None
+        self.client_address = None
+        self.is_running = False
         self.receive_thread = None
         self.heartbeat_thread = None
 
-    def connect(self):
-        """Connect to the iOS device."""
+    def start(self):
+        """Start the server and listen for connections."""
         try:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(5)  # 5 second timeout
-            logger.info(f"Connecting to {self.host}:{self.port}...")
-            self.socket.connect((self.host, self.port))
-            self.is_connected = True
-            logger.info("✅ Connected successfully")
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            logger.info(f"Binding to {self.host}:{self.port}...")
+            self.server_socket.bind((self.host, self.port))
+            self.server_socket.listen(1)
+            self.is_running = True
+            logger.info(f"Server started on {self.host}:{self.port}")
 
-            # Start receive and heartbeat threads
-            self.receive_thread = threading.Thread(target=self._receive_loop)
-            self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop)
-            self.receive_thread.daemon = True
-            self.heartbeat_thread.daemon = True
-            self.receive_thread.start()
-            self.heartbeat_thread.start()
+            # Accept client connections
+            self._accept_connections()
 
         except Exception as e:
-            logger.error(f"Connection error: {e}")
+            logger.error(f"Server error: {e}")
             self.close()
 
-    def _receive_loop(self):
-        """Continuously receive data from the iOS device."""
-        while self.is_connected:
+    def _accept_connections(self):
+        """Accept incoming connections."""
+        logger.info("Waiting for connections...")
+        while self.is_running:
             try:
-                data = self.socket.recv(1024)
+                self.server_socket.settimeout(
+                    1
+                )  # Short timeout to allow checking is_running
+                self.client_socket, self.client_address = self.server_socket.accept()
+                logger.info(f"✅ Client connected: {self.client_address}")
+
+                # Start receive and heartbeat threads
+                self.receive_thread = threading.Thread(target=self._receive_loop)
+                self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop)
+                self.receive_thread.daemon = True
+                self.heartbeat_thread.daemon = True
+                self.receive_thread.start()
+                self.heartbeat_thread.start()
+
+                # Wait for the client to disconnect before accepting another
+                self.receive_thread.join()
+                logger.info("Client disconnected, waiting for new connections")
+
+            except socket.timeout:
+                continue
+            except Exception as e:
+                if self.is_running:
+                    logger.error(f"Accept error: {e}")
+                    time.sleep(1)  # Prevent rapid retry on error
+
+    def _receive_loop(self):
+        """Continuously receive data from the connected client."""
+        self.client_socket.settimeout(1)  # 1 second timeout
+        while self.is_running and self.client_socket:
+            try:
+                data = self.client_socket.recv(1024)
                 if not data:
-                    logger.info("Connection closed by server")
+                    logger.info("Client closed connection")
                     break
                 logger.info(f"Received: {data.decode('utf-8')}")
+
+                # Echo back the data
+                response = f"Echo: {data.decode('utf-8')}"
+                self.send(response)
+
             except socket.timeout:
                 continue
             except Exception as e:
                 logger.error(f"Receive error: {e}")
                 break
 
+        # Clean up client connection
+        if self.client_socket:
+            self.client_socket.close()
+            self.client_socket = None
+            self.client_address = None
+
     def _heartbeat_loop(self):
         """Send periodic heartbeat messages."""
-        while self.is_connected:
+        while self.is_running and self.client_socket:
             try:
-                self.send("heartbeat")
+                self.send("server_heartbeat")
                 time.sleep(5)  # Send heartbeat every 5 seconds
-            except Exception as e:
-                logger.error(f"Heartbeat error: {e}")
+            except Exception:
                 break
 
     def send(self, message):
-        """Send data to the iOS device."""
-        if not self.is_connected:
-            logger.error("Not connected")
+        """Send data to the connected client."""
+        if not self.client_socket:
+            logger.error("No client connected")
             return
 
         try:
-            self.socket.sendall(message.encode("utf-8"))
+            self.client_socket.sendall(message.encode("utf-8"))
             logger.info(f"Sent: {message}")
         except Exception as e:
             logger.error(f"Send error: {e}")
-            self.close()
+            # Don't close the server, just the client connection
+            if self.client_socket:
+                self.client_socket.close()
+                self.client_socket = None
+                self.client_address = None
 
     def close(self):
-        """Close the connection."""
-        self.is_connected = False
-        if self.socket:
-            self.socket.close()
-            self.socket = None
-        logger.info("Connection closed")
+        """Close the server."""
+        self.is_running = False
+
+        if self.client_socket:
+            self.client_socket.close()
+            self.client_socket = None
+
+        if self.server_socket:
+            self.server_socket.close()
+            self.server_socket = None
+
+        logger.info("Server closed")
 
 
 def main():
     if len(sys.argv) > 1:
-        host = sys.argv[1]
+        port = int(sys.argv[1])
     else:
-        host = "172.30.0.139"  # Default link-local address
+        port = 2345
 
-    client = EthernetClient(host=host)
+    server = EthernetServer(port=port)
 
     try:
-        client.connect()
+        server.start()
 
-        # Keep the main thread alive
-        while client.is_connected:
+        # Keep the main thread alive for user input
+        while server.is_running:
             try:
                 # Get user input
-                message = input("Enter message to send (or 'quit' to exit): ")
+                message = input("Enter message to send to client (or 'quit' to exit): ")
                 if message.lower() == "quit":
                     break
-                client.send(message)
+
+                if server.client_socket:
+                    server.send(message)
+                else:
+                    logger.info("No client connected. Message not sent.")
+
             except KeyboardInterrupt:
                 break
             except Exception as e:
                 logger.error(f"Error: {e}")
-                break
 
     finally:
-        client.close()
+        server.close()
 
 
 if __name__ == "__main__":
