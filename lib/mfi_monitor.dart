@@ -4,7 +4,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 class MFIMonitor extends StatefulWidget {
-  const MFIMonitor({Key? key}) : super(key: key);
+  const MFIMonitor({super.key});
 
   @override
   State<MFIMonitor> createState() => _MFIMonitorState();
