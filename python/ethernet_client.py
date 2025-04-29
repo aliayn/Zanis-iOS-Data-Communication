@@ -67,13 +67,13 @@ class EthernetServer:
                 self.client_socket, self.client_address = self.server_socket.accept()
                 logger.info(f"✅ Client connected: {self.client_address}")
 
-                # Start receive and heartbeat threads
-                self.receive_thread = threading.Thread(target=self._receive_loop)
-                self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop)
-                self.receive_thread.daemon = True
-                self.heartbeat_thread.daemon = True
-                self.receive_thread.start()
-                self.heartbeat_thread.start()
+            # Start receive and heartbeat threads
+            self.receive_thread = threading.Thread(target=self._receive_loop)
+            self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop)
+            self.receive_thread.daemon = True
+            self.heartbeat_thread.daemon = True
+            self.receive_thread.start()
+            self.heartbeat_thread.start()
 
                 # Wait for the client to disconnect before accepting another
                 self.receive_thread.join()
@@ -81,7 +81,7 @@ class EthernetServer:
 
             except socket.timeout:
                 continue
-            except Exception as e:
+        except Exception as e:
                 if self.is_running:
                     logger.error(f"Accept error: {e}")
                     time.sleep(1)  # Prevent rapid retry on error
