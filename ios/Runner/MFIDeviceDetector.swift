@@ -15,7 +15,7 @@ class MFiDeviceManager: NSObject {
   private var inputStream: InputStream?
   private var outputStream: OutputStream?
   private var logChannel: FlutterMethodChannel?
-  private let supportedProtocols = ["com.zanis.protocol"]
+  private let supportedProtocols = ["io.zanis.usb"]
   private var isReconnecting = false
   private var reconnectTimer: Timer?
   private let maxReconnectAttempts = 3
@@ -63,8 +63,8 @@ class MFiDeviceManager: NSObject {
     }
     
     for accessory in accessories {
-      if let protocol = findSupportedProtocol(for: accessory) {
-        log("Found already connected accessory: \(accessory.name) (Protocol: \(protocol))")
+      if let protocolString = findSupportedProtocol(for: accessory) {
+        log("Found already connected accessory: \(accessory.name) (Protocol: \(protocolString))")
         handleAccessoryConnected(accessory)
       }
     }
