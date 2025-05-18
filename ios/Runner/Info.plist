@@ -45,6 +45,12 @@
 			<string>UIInterfaceOrientationLandscapeLeft</string>
 			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
+		<key>UISupportedExternalAccessoryProtocols</key>
+		<array>
+			<string>com.zanis.protocol</string>
+		</array>
+		<key>com.apple.external-accessory.wireless-configuration</key>
+		<true/>
 		<key>com.apple.security.network.server</key>
 		<true/>
 		<key>com.apple.security.device.usb</key>

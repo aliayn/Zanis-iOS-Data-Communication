@@ -15,6 +15,11 @@ class MFiDeviceManager: NSObject {
   private var inputStream: InputStream?
   private var outputStream: OutputStream?
   private var logChannel: FlutterMethodChannel?
+  private let supportedProtocols = ["com.zanis.protocol"]
+  private var isReconnecting = false
+  private var reconnectTimer: Timer?
+  private let maxReconnectAttempts = 3
+  private var reconnectAttempts = 0
 
   func setLogChannel(_ channel: FlutterMethodChannel) {
     logChannel = channel
@@ -22,7 +27,9 @@ class MFiDeviceManager: NSObject {
 
   private func log(_ message: String) {
     print("MFi: \(message)")
-    logChannel?.invokeMethod("log", arguments: message)
+    DispatchQueue.main.async {
+      self.logChannel?.invokeMethod("log", arguments: message)
+    }
   }
 
   func startMonitoring() {
@@ -45,27 +52,98 @@ class MFiDeviceManager: NSObject {
     log("Started monitoring for MFi devices")
     
     // Check for already connected accessories
-    for accessory in accessoryManager.connectedAccessories {
-      handleAccessoryConnected(accessory)
+    checkConnectedAccessories()
+  }
+
+  private func checkConnectedAccessories() {
+    let accessories = accessoryManager.connectedAccessories
+    if accessories.isEmpty {
+      log("No MFi accessories currently connected")
+      return
+    }
+    
+    for accessory in accessories {
+      if let protocol = findSupportedProtocol(for: accessory) {
+        log("Found already connected accessory: \(accessory.name) (Protocol: \(protocol))")
+        handleAccessoryConnected(accessory)
+      }
+    }
+  }
+
+  private func findSupportedProtocol(for accessory: EAAccessory) -> String? {
+    return accessory.protocolStrings.first { protocolString in
+      supportedProtocols.contains(protocolString)
     }
   }
 
   @objc func accessoryConnected(_ notification: Notification) {
-    guard let accessory = notification.userInfo?[EAAccessoryKey] as? EAAccessory else { return }
+    guard let accessory = notification.userInfo?[EAAccessoryKey] as? EAAccessory else {
+      log("⚠️ Failed to get accessory from notification")
+      return
+    }
     handleAccessoryConnected(accessory)
   }
 
   @objc func accessoryDisconnected(_ notification: Notification) {
-    guard let accessory = notification.userInfo?[EAAccessoryKey] as? EAAccessory else { return }
+    guard let accessory = notification.userInfo?[EAAccessoryKey] as? EAAccessory else {
+      log("⚠️ Failed to get accessory from notification")
+      return
+    }
+    
     if accessory == connectedAccessory {
+      log("🔌 Accessory disconnected: \(accessory.name)")
       disconnectFromAccessory()
+      
+      // Start reconnection attempts if not already trying
+      if !isReconnecting {
+        startReconnectionTimer()
+      }
     }
   }
 
+  private func startReconnectionTimer() {
+    isReconnecting = true
+    reconnectAttempts = 0
+    reconnectTimer?.invalidate()
+    
+    reconnectTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+      guard let self = self else { return }
+      
+      self.reconnectAttempts += 1
+      self.log("Attempting to reconnect (Attempt \(self.reconnectAttempts)/\(self.maxReconnectAttempts))")
+      
+      if let accessory = self.accessoryManager.connectedAccessories.first(where: { self.findSupportedProtocol(for: $0) != nil }) {
+        self.handleAccessoryConnected(accessory)
+        self.stopReconnectionTimer()
+      } else if self.reconnectAttempts >= self.maxReconnectAttempts {
+        self.log("❌ Max reconnection attempts reached")
+        self.stopReconnectionTimer()
+      }
+    }
+  }
+
+  private func stopReconnectionTimer() {
+    reconnectTimer?.invalidate()
+    reconnectTimer = nil
+    isReconnecting = false
+    reconnectAttempts = 0
+  }
+
   private func handleAccessoryConnected(_ accessory: EAAccessory) {
+    // Log detailed accessory information
+    log("📱 Accessory Details:")
+    log("   Name: \(accessory.name)")
+    log("   Manufacturer: \(accessory.manufacturer)")
+    log("   Model Number: \(accessory.modelNumber)")
+    log("   Serial Number: \(accessory.serialNumber)")
+    log("   Firmware Version: \(accessory.firmwareRevision)")
+    log("   Hardware Version: \(accessory.hardwareRevision)")
+    
     let (vid, pid) = extractVIDPID(from: accessory)
     let message = "🔌 MFi Device Connected: VID=\(vid ?? "unknown"), PID=\(pid ?? "unknown")"
     log(message)
+    
+    // Send device info to Flutter
     DataService.shared.sendDeviceInfo(vid: vid, pid: pid)
     
     // Connect to the accessory if it's not already connected
@@ -76,8 +154,9 @@ class MFiDeviceManager: NSObject {
 
   private func connectToAccessory(_ accessory: EAAccessory) {
     // Find a supported protocol
-    guard let protocolString = accessory.protocolStrings.first else {
+    guard let protocolString = findSupportedProtocol(for: accessory) else {
       log("⚠️ No supported protocols found for accessory")
+      log("   Available protocols: \(accessory.protocolStrings.joined(separator: ", "))")
       return
     }
     
@@ -92,18 +171,26 @@ class MFiDeviceManager: NSObject {
     inputStream = session.inputStream
     outputStream = session.outputStream
     
+    guard let input = inputStream, let output = outputStream else {
+      log("⚠️ Failed to get streams from session")
+      return
+    }
+    
     // Configure and open the streams
-    inputStream?.delegate = self
-    outputStream?.delegate = self
+    input.delegate = self
+    output.delegate = self
     
-    inputStream?.schedule(in: .main, forMode: .default)
-    outputStream?.schedule(in: .main, forMode: .default)
+    input.schedule(in: .main, forMode: .default)
+    output.schedule(in: .main, forMode: .default)
     
-    inputStream?.open()
-    outputStream?.open()
+    input.open()
+    output.open()
     
     connectedAccessory = accessory
-    log("✅ Connected to MFi device")
+    log("✅ Connected to MFi device using protocol: \(protocolString)")
+    
+    // Stop any ongoing reconnection attempts
+    stopReconnectionTimer()
   }
 
   private func disconnectFromAccessory() {
@@ -121,18 +208,22 @@ class MFiDeviceManager: NSObject {
   }
 
   public func extractVIDPID(from accessory: EAAccessory) -> (vid: String?, pid: String?) {
+    var vid: String?
+    var pid: String?
+    
     for protocolString in accessory.protocolStrings {
       let components = protocolString.components(separatedBy: ".")
       for component in components {
-        if component.hasPrefix("vid"), let vid = component.components(separatedBy: "vid").last {
-          return (vid, nil)
+        if component.hasPrefix("vid"), let value = component.components(separatedBy: "vid").last {
+          vid = value
         }
-        if component.hasPrefix("pid"), let pid = component.components(separatedBy: "pid").last {
-          return (nil, pid)
+        if component.hasPrefix("pid"), let value = component.components(separatedBy: "pid").last {
+          pid = value
         }
       }
     }
-    return (nil, nil)
+    
+    return (vid, pid)
   }
 
   func sendData(_ data: Data) {
@@ -141,15 +232,30 @@ class MFiDeviceManager: NSObject {
       return
     }
     
-    let bytesWritten = data.withUnsafeBytes { buffer in
-      outputStream.write(buffer.bindMemory(to: UInt8.self).baseAddress!, maxLength: data.count)
+    var bytesRemaining = data.count
+    var bytesSent = 0
+    
+    while bytesRemaining > 0 {
+      let bytesWritten = data.withUnsafeBytes { buffer in
+        outputStream.write(
+          buffer.bindMemory(to: UInt8.self).baseAddress!.advanced(by: bytesSent),
+          maxLength: bytesRemaining
+        )
+      }
+      
+      if bytesWritten < 0 {
+        log("⚠️ Error sending data: \(outputStream.streamError?.localizedDescription ?? "Unknown error")")
+        return
+      } else if bytesWritten == 0 {
+        log("⚠️ No bytes written to stream")
+        return
+      }
+      
+      bytesRemaining -= bytesWritten
+      bytesSent += bytesWritten
     }
     
-    if bytesWritten > 0 {
-      log("📤 Sent \(bytesWritten) bytes to MFi device")
-    } else {
-      log("⚠️ Failed to send data to MFi device")
-    }
+    log("📤 Successfully sent \(bytesSent) bytes to MFi device")
   }
 }
 
@@ -157,21 +263,30 @@ extension MFiDeviceManager: StreamDelegate {
   func stream(_ aStream: Stream, handle eventCode: Stream.Event) {
     switch eventCode {
     case .openCompleted:
-      log("Stream opened")
+      log("Stream opened successfully")
     case .hasBytesAvailable:
       if aStream == inputStream {
         readData()
       }
     case .hasSpaceAvailable:
-      log("Stream has space available")
+      if aStream == outputStream {
+        log("Output stream ready for writing")
+      }
     case .errorOccurred:
-      log("Stream error occurred")
-      disconnectFromAccessory()
+      log("⚠️ Stream error: \(aStream.streamError?.localizedDescription ?? "Unknown error")")
+      handleStreamError(aStream)
     case .endEncountered:
       log("Stream ended")
-      disconnectFromAccessory()
+      handleStreamError(aStream)
     default:
       break
+    }
+  }
+  
+  private func handleStreamError(_ stream: Stream) {
+    disconnectFromAccessory()
+    if !isReconnecting {
+      startReconnectionTimer()
     }
   }
   
@@ -182,13 +297,30 @@ extension MFiDeviceManager: StreamDelegate {
     let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
     defer { buffer.deallocate() }
     
+    var totalBytesRead = 0
+    
     while inputStream.hasBytesAvailable {
-      let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
-      if bytesRead > 0 {
-        let data = Data(bytes: buffer, count: bytesRead)
-        log("📥 Received \(bytesRead) bytes from MFi device")
-        DataService.shared.didReceiveData(data)
+      let bytesRead = inputStream.read(buffer.advanced(by: totalBytesRead), maxLength: bufferSize - totalBytesRead)
+      
+      if bytesRead < 0 {
+        log("⚠️ Error reading from stream: \(inputStream.streamError?.localizedDescription ?? "Unknown error")")
+        handleStreamError(inputStream)
+        return
+      } else if bytesRead == 0 {
+        break
       }
+      
+      totalBytesRead += bytesRead
+      
+      if totalBytesRead >= bufferSize {
+        break
+      }
+    }
+    
+    if totalBytesRead > 0 {
+      let data = Data(bytes: buffer, count: totalBytesRead)
+      log("📥 Received \(totalBytesRead) bytes from MFi device")
+      DataService.shared.didReceiveData(data)
     }
   }
 }
