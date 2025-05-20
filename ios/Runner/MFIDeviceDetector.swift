@@ -7,6 +7,7 @@
 
 import ExternalAccessory
 import UIKit
+import Flutter
 
 class MFiDeviceManager: NSObject {
   static let shared = MFiDeviceManager()
@@ -60,10 +61,18 @@ class MFiDeviceManager: NSObject {
     if !isInitialized {
       initializeDeviceDetection()
     }
+    
+    // Check for already connected accessories even if already initialized
+    DispatchQueue.main.async { [weak self] in
+      self?.checkConnectedAccessories()
+    }
   }
 
   private func initializeDeviceDetection() {
     guard !isInitialized else { return }
+    
+    // Initialize connection status to disconnected
+    DataService.shared.connectionStatusChanged(false)
     
     // Register for accessory notifications
     NotificationCenter.default.addObserver(
@@ -85,7 +94,9 @@ class MFiDeviceManager: NSObject {
     log("MFi device detection initialized")
     
     // Check for already connected accessories
-    checkConnectedAccessories()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in 
+      self?.checkConnectedAccessories()
+    }
   }
 
   func startMonitoring() {
@@ -198,10 +209,20 @@ class MFiDeviceManager: NSObject {
     // Send device info to Flutter
     DataService.shared.sendDeviceInfo(vid: vid, pid: pid)
     
-    // Connect to the accessory if it's not already connected
-    if connectedAccessory == nil {
-      connectToAccessory(accessory)
+    // Always try to connect to the accessory
+    if let currentAccessory = connectedAccessory {
+      // Check if this is the same device we're already connected to
+      if currentAccessory.connectionID == accessory.connectionID {
+        log("Already connected to this accessory, refreshing connection")
+        disconnectFromAccessory()
+      } else {
+        log("New accessory detected, switching connection")
+        disconnectFromAccessory()
+      }
     }
+    
+    // Connect to the accessory
+    connectToAccessory(accessory)
   }
 
   private func connectToAccessory(_ accessory: EAAccessory) {
@@ -209,6 +230,7 @@ class MFiDeviceManager: NSObject {
     guard let protocolString = findSupportedProtocol(for: accessory) else {
       log("⚠️ No supported protocols found for accessory")
       log("   Available protocols: \(accessory.protocolStrings.joined(separator: ", "))")
+      DataService.shared.connectionStatusChanged(false)
       return
     }
     
@@ -216,6 +238,7 @@ class MFiDeviceManager: NSObject {
     session = EASession(accessory: accessory, forProtocol: protocolString)
     guard let session = session else {
       log("⚠️ Failed to create session for accessory")
+      DataService.shared.connectionStatusChanged(false)
       return
     }
     
@@ -225,6 +248,7 @@ class MFiDeviceManager: NSObject {
     
     guard let input = inputStream, let output = outputStream else {
       log("⚠️ Failed to get streams from session")
+      DataService.shared.connectionStatusChanged(false)
       return
     }
     
@@ -232,17 +256,30 @@ class MFiDeviceManager: NSObject {
     input.delegate = self
     output.delegate = self
     
+    // Important: Schedule streams before opening them
     input.schedule(in: .main, forMode: .default)
     output.schedule(in: .main, forMode: .default)
     
+    // Open streams with a slight delay between them to prevent timing issues
     input.open()
-    output.open()
+    
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+      output.open()
+    }
     
     connectedAccessory = accessory
     log("✅ Connected to MFi device using protocol: \(protocolString)")
     
+    // Update connection status to connected after successful connection
+    DataService.shared.connectionStatusChanged(true)
+    
     // Stop any ongoing reconnection attempts
     stopReconnectionTimer()
+    
+    // Initiate a read after a short delay to ensure stream is ready
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+      self?.readData()
+    }
   }
 
   private func disconnectFromAccessory() {
@@ -255,6 +292,9 @@ class MFiDeviceManager: NSObject {
     outputStream = nil
     session = nil
     connectedAccessory = nil
+    
+    // Update connection status to disconnected
+    DataService.shared.connectionStatusChanged(false)
     
     log("❌ Disconnected from MFi device")
   }
@@ -332,7 +372,10 @@ extension MFiDeviceManager: StreamDelegate {
       log("Stream opened successfully")
       // Start reading immediately after stream opens
       if aStream == inputStream {
-        readData()
+        // Allow a short delay for the stream to fully initialize
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+          self?.readData()
+        }
       }
     case .hasBytesAvailable:
       if aStream == inputStream {
@@ -362,29 +405,46 @@ extension MFiDeviceManager: StreamDelegate {
   }
   
   private func handleStreamError(_ stream: Stream) {
-    disconnectFromAccessory()
-    if !isReconnecting {
-      startReconnectionTimer()
+    log("Handling stream error and attempting recovery")
+    // Try to recover the stream if possible
+    if stream == inputStream {
+      // Attempt to reopen input stream
+      inputStream?.open()
+    } else if stream == outputStream {
+      // Attempt to reopen output stream
+      outputStream?.open()
+    }
+    
+    // If stream is completely broken, disconnect and try to reconnect
+    if stream.streamStatus == .error || stream.streamStatus == .closed {
+      disconnectFromAccessory()
+      if !isReconnecting {
+        startReconnectionTimer()
+      }
     }
   }
   
   private func readData() {
-    guard let inputStream = inputStream else {
-      log("⚠️ Cannot read data: No input stream available")
+    guard let inputStream = inputStream, inputStream.streamStatus == .open else {
+      log("⚠️ Cannot read data: Input stream not ready (status: \(inputStream?.streamStatus.rawValue.description ?? "nil"))")
       return
     }
     
-    let bufferSize = 1024
+    let bufferSize = 4096 // Increased buffer size
     let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
     defer { buffer.deallocate() }
     
-    var totalBytesRead = 0
-    var isReading = true
-    
-    while isReading && inputStream.hasBytesAvailable {
-      let bytesRead = inputStream.read(buffer.advanced(by: totalBytesRead), maxLength: bufferSize - totalBytesRead)
+    // Continue reading as long as there are bytes available
+    while inputStream.hasBytesAvailable {
+      let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
       
-      if bytesRead < 0 {
+      if bytesRead > 0 {
+        let data = Data(bytes: buffer, count: bytesRead)
+        processReceivedData(data)
+        
+        // Log successful read
+        log("📥 Successfully read \(bytesRead) bytes from stream")
+      } else if bytesRead < 0 {
         if let error = inputStream.streamError {
           log("⚠️ Error reading from stream: \(error.localizedDescription)")
           if let nsError = error as? NSError {
@@ -395,25 +455,19 @@ extension MFiDeviceManager: StreamDelegate {
           log("⚠️ Error reading from stream (no error details available)")
         }
         handleStreamError(inputStream)
-        return
-      } else if bytesRead == 0 {
-        isReading = false
+        break
       } else {
-        totalBytesRead += bytesRead
-        
-        // Process data if we've reached buffer size or no more bytes available
-        if totalBytesRead >= bufferSize || !inputStream.hasBytesAvailable {
-          let data = Data(bytes: buffer, count: totalBytesRead)
-          processReceivedData(data)
-          totalBytesRead = 0
-        }
+        // bytesRead == 0, which means end of stream
+        log("End of stream reached")
+        break
       }
     }
     
-    // Process any remaining data
-    if totalBytesRead > 0 {
-      let data = Data(bytes: buffer, count: totalBytesRead)
-      processReceivedData(data)
+    // Schedule another read after a short delay to ensure continuous reading
+    if inputStream.streamStatus == .open {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+        self?.readData()
+      }
     }
   }
   
@@ -426,8 +480,10 @@ extension MFiDeviceManager: StreamDelegate {
       log("📥 Received string data: \(stringData)")
     }
     
-    // Forward data to Flutter
-    DataService.shared.didReceiveData(data)
+    // Forward data to Flutter immediately on the main thread
+    DispatchQueue.main.async {
+      DataService.shared.didReceiveData(data)
+    }
   }
 }
 
