@@ -8,13 +8,14 @@ import ExternalAccessory
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // Initialize MFi device manager
-    MFiDeviceManager.shared.startMonitoring()
-    
-    // Initialize Flutter
+    // Initialize Flutter first
     GeneratedPluginRegistrant.register(with: self)
     
     let controller = window?.rootViewController as! FlutterViewController
+    
+    // Set up log channel first
+    let logChannel = FlutterMethodChannel(name: "com.zanis.device/logs", binaryMessenger: controller.binaryMessenger)
+    MFiDeviceManager.shared.setLogChannel(logChannel)
     
     // Set up device communication channel
     let deviceChannel = FlutterMethodChannel(name: "com.zanis.device", binaryMessenger: controller.binaryMessenger)
@@ -34,9 +35,8 @@ import ExternalAccessory
       }
     }
     
-    // Set up log channel
-    let logChannel = FlutterMethodChannel(name: "com.zanis.device/logs", binaryMessenger: controller.binaryMessenger)
-    MFiDeviceManager.shared.setLogChannel(logChannel)
+    // Start monitoring after channels are set up
+    MFiDeviceManager.shared.startMonitoring()
     
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

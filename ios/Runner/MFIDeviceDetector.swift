@@ -6,6 +6,7 @@
 //
 
 import ExternalAccessory
+import UIKit
 
 class MFiDeviceManager: NSObject {
   static let shared = MFiDeviceManager()
@@ -20,19 +21,50 @@ class MFiDeviceManager: NSObject {
   private var reconnectTimer: Timer?
   private let maxReconnectAttempts = 3
   private var reconnectAttempts = 0
+  private var isInitialized = false
+
+  override init() {
+    super.init()
+    setupNotifications()
+  }
+
+  private func setupNotifications() {
+    // Register for app state changes
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(applicationDidBecomeActive),
+      name: UIApplication.didBecomeActiveNotification,
+      object: nil
+    )
+    
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(applicationWillResignActive),
+      name: UIApplication.willResignActiveNotification,
+      object: nil
+    )
+  }
+
+  @objc private func applicationDidBecomeActive() {
+    log("App became active - checking for connected accessories")
+    checkConnectedAccessories()
+  }
+
+  @objc private func applicationWillResignActive() {
+    log("App will resign active - cleaning up")
+    stopReconnectionTimer()
+  }
 
   func setLogChannel(_ channel: FlutterMethodChannel) {
     logChannel = channel
-  }
-
-  private func log(_ message: String) {
-    print("MFi: \(message)")
-    DispatchQueue.main.async {
-      self.logChannel?.invokeMethod("log", arguments: message)
+    if !isInitialized {
+      initializeDeviceDetection()
     }
   }
 
-  func startMonitoring() {
+  private func initializeDeviceDetection() {
+    guard !isInitialized else { return }
+    
     // Register for accessory notifications
     NotificationCenter.default.addObserver(
       self,
@@ -49,10 +81,18 @@ class MFiDeviceManager: NSObject {
     )
     
     accessoryManager.registerForLocalNotifications()
-    log("Started monitoring for MFi devices")
+    isInitialized = true
+    log("MFi device detection initialized")
     
     // Check for already connected accessories
     checkConnectedAccessories()
+  }
+
+  func startMonitoring() {
+    if !isInitialized {
+      initializeDeviceDetection()
+    }
+    log("Started monitoring for MFi devices")
   }
 
   private func checkConnectedAccessories() {
@@ -62,11 +102,23 @@ class MFiDeviceManager: NSObject {
       return
     }
     
+    log("Found \(accessories.count) connected accessories")
     for accessory in accessories {
+      log("Checking accessory: \(accessory.name)")
       if let protocolString = findSupportedProtocol(for: accessory) {
-        log("Found already connected accessory: \(accessory.name) (Protocol: \(protocolString))")
+        log("Found supported accessory: \(accessory.name) (Protocol: \(protocolString))")
         handleAccessoryConnected(accessory)
+      } else {
+        log("Accessory \(accessory.name) does not support required protocol")
+        log("Available protocols: \(accessory.protocolStrings.joined(separator: ", "))")
       }
+    }
+  }
+
+  private func log(_ message: String) {
+    print("MFi: \(message)")
+    DispatchQueue.main.async {
+      self.logChannel?.invokeMethod("log", arguments: message)
     }
   }
 
@@ -232,6 +284,9 @@ class MFiDeviceManager: NSObject {
       return
     }
     
+    // Log data being sent
+    log("📤 Sending data: \(data.map { String(format: "%02x", $0) }.joined())")
+    
     var bytesRemaining = data.count
     var bytesSent = 0
     
@@ -244,7 +299,13 @@ class MFiDeviceManager: NSObject {
       }
       
       if bytesWritten < 0 {
-        log("⚠️ Error sending data: \(outputStream.streamError?.localizedDescription ?? "Unknown error")")
+        if let error = outputStream.streamError {
+          log("⚠️ Error sending data: \(error.localizedDescription)")
+          log("⚠️ Error domain: \(error.domain)")
+          log("⚠️ Error code: \(error.code)")
+        } else {
+          log("⚠️ Error sending data (no error details available)")
+        }
         return
       } else if bytesWritten == 0 {
         log("⚠️ No bytes written to stream")
@@ -253,6 +314,9 @@ class MFiDeviceManager: NSObject {
       
       bytesRemaining -= bytesWritten
       bytesSent += bytesWritten
+      
+      // Log progress
+      log("📤 Sent \(bytesSent) of \(data.count) bytes")
     }
     
     log("📤 Successfully sent \(bytesSent) bytes to MFi device")
@@ -264,6 +328,10 @@ extension MFiDeviceManager: StreamDelegate {
     switch eventCode {
     case .openCompleted:
       log("Stream opened successfully")
+      // Start reading immediately after stream opens
+      if aStream == inputStream {
+        readData()
+      }
     case .hasBytesAvailable:
       if aStream == inputStream {
         readData()
@@ -273,7 +341,13 @@ extension MFiDeviceManager: StreamDelegate {
         log("Output stream ready for writing")
       }
     case .errorOccurred:
-      log("⚠️ Stream error: \(aStream.streamError?.localizedDescription ?? "Unknown error")")
+      if let error = aStream.streamError {
+        log("⚠️ Stream error: \(error.localizedDescription)")
+        log("⚠️ Error domain: \(error.domain)")
+        log("⚠️ Error code: \(error.code)")
+      } else {
+        log("⚠️ Stream error occurred (no error details available)")
+      }
       handleStreamError(aStream)
     case .endEncountered:
       log("Stream ended")
@@ -291,36 +365,63 @@ extension MFiDeviceManager: StreamDelegate {
   }
   
   private func readData() {
-    guard let inputStream = inputStream else { return }
+    guard let inputStream = inputStream else {
+      log("⚠️ Cannot read data: No input stream available")
+      return
+    }
     
     let bufferSize = 1024
     let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
     defer { buffer.deallocate() }
     
     var totalBytesRead = 0
+    var isReading = true
     
-    while inputStream.hasBytesAvailable {
+    while isReading && inputStream.hasBytesAvailable {
       let bytesRead = inputStream.read(buffer.advanced(by: totalBytesRead), maxLength: bufferSize - totalBytesRead)
       
       if bytesRead < 0 {
-        log("⚠️ Error reading from stream: \(inputStream.streamError?.localizedDescription ?? "Unknown error")")
+        if let error = inputStream.streamError {
+          log("⚠️ Error reading from stream: \(error.localizedDescription)")
+          log("⚠️ Error domain: \(error.domain)")
+          log("⚠️ Error code: \(error.code)")
+        } else {
+          log("⚠️ Error reading from stream (no error details available)")
+        }
         handleStreamError(inputStream)
         return
       } else if bytesRead == 0 {
-        break
-      }
-      
-      totalBytesRead += bytesRead
-      
-      if totalBytesRead >= bufferSize {
-        break
+        isReading = false
+      } else {
+        totalBytesRead += bytesRead
+        
+        // Process data if we've reached buffer size or no more bytes available
+        if totalBytesRead >= bufferSize || !inputStream.hasBytesAvailable {
+          let data = Data(bytes: buffer, count: totalBytesRead)
+          processReceivedData(data)
+          totalBytesRead = 0
+        }
       }
     }
     
+    // Process any remaining data
     if totalBytesRead > 0 {
       let data = Data(bytes: buffer, count: totalBytesRead)
-      log("📥 Received \(totalBytesRead) bytes from MFi device")
-      DataService.shared.didReceiveData(data)
+      processReceivedData(data)
     }
   }
+  
+  private func processReceivedData(_ data: Data) {
+    // Log raw data for debugging
+    log("📥 Received raw data: \(data.map { String(format: "%02x", $0) }.joined())")
+    
+    // Try to convert to string if possible
+    if let stringData = String(data: data, encoding: .utf8) {
+      log("📥 Received string data: \(stringData)")
+    }
+    
+    // Forward data to Flutter
+    DataService.shared.didReceiveData(data)
+  }
 }
+
