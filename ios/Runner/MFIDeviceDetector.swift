@@ -301,8 +301,10 @@ class MFiDeviceManager: NSObject {
       if bytesWritten < 0 {
         if let error = outputStream.streamError {
           log("⚠️ Error sending data: \(error.localizedDescription)")
-          log("⚠️ Error domain: \(error.domain)")
-          log("⚠️ Error code: \(error.code)")
+          if let nsError = error as? NSError {
+            log("⚠️ Error domain: \(nsError.domain)")
+            log("⚠️ Error code: \(nsError.code)")
+          }
         } else {
           log("⚠️ Error sending data (no error details available)")
         }
@@ -343,8 +345,10 @@ extension MFiDeviceManager: StreamDelegate {
     case .errorOccurred:
       if let error = aStream.streamError {
         log("⚠️ Stream error: \(error.localizedDescription)")
-        log("⚠️ Error domain: \(error.domain)")
-        log("⚠️ Error code: \(error.code)")
+        if let nsError = error as? NSError {
+          log("⚠️ Error domain: \(nsError.domain)")
+          log("⚠️ Error code: \(nsError.code)")
+        }
       } else {
         log("⚠️ Stream error occurred (no error details available)")
       }
@@ -383,8 +387,10 @@ extension MFiDeviceManager: StreamDelegate {
       if bytesRead < 0 {
         if let error = inputStream.streamError {
           log("⚠️ Error reading from stream: \(error.localizedDescription)")
-          log("⚠️ Error domain: \(error.domain)")
-          log("⚠️ Error code: \(error.code)")
+          if let nsError = error as? NSError {
+            log("⚠️ Error domain: \(nsError.domain)")
+            log("⚠️ Error code: \(nsError.code)")
+          }
         } else {
           log("⚠️ Error reading from stream (no error details available)")
         }
