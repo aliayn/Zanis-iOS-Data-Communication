@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Use the same VID/PID as in iOS side -->
+    <usb-device vendor-id="0x0000" product-id="0x0000" />
+    <!-- Replace with your actual VID/PID -->
+
+    <!-- Common USB-to-Serial adapters -->
+    <!-- FTDI FT232R UART -->
+    <usb-device vendor-id="1027" product-id="24577" />
+
+    <!-- FTDI FT231X -->
+    <usb-device vendor-id="1027" product-id="24597" />
+
+    <!-- CH340 JLink -->
+    <usb-device vendor-id="6790" product-id="29987" />
+
+    <!-- CP210x UART Bridge -->
+    <usb-device vendor-id="4292" product-id="60000" />
+
+    <!-- Prolific PL2303 -->
+    <usb-device vendor-id="1659" product-id="8963" />
+</resources> 
