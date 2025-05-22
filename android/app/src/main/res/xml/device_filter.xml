@@ -4,6 +4,10 @@
     <usb-device vendor-id="0x0000" product-id="0x0000" />
     <!-- Replace with your actual VID/PID -->
 
+    <!-- Your specific CH340 device -->
+    <usb-device vendor-id="0x1A86" product-id="0x7523" />
+    <!-- CH340 -->
+
     <!-- Common USB-to-Serial adapters -->
     <!-- FTDI FT232R UART -->
     <usb-device vendor-id="1027" product-id="24577" />
@@ -11,7 +15,7 @@
     <!-- FTDI FT231X -->
     <usb-device vendor-id="1027" product-id="24597" />
 
-    <!-- CH340 JLink -->
+    <!-- CH340 JLink (alternative format) -->
     <usb-device vendor-id="6790" product-id="29987" />
 
     <!-- CP210x UART Bridge -->

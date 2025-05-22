@@ -13,6 +13,9 @@ import ExternalAccessory
     
     let controller = window?.rootViewController as! FlutterViewController
     
+    // Register the event channel handler
+    StreamHandlerImpl.register(registrar: self.registrar(forPlugin: "StreamHandlerImpl")!)
+    
     // Set up log channel first
     let logChannel = FlutterMethodChannel(name: "com.zanis.device/logs", binaryMessenger: controller.binaryMessenger)
     MFiDeviceManager.shared.setLogChannel(logChannel)

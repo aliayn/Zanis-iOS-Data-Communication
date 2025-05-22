@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -43,7 +44,9 @@ class AndroidDataSource {
   final StreamController<String> _logController = StreamController<String>.broadcast();
 
   AndroidDataSource() {
-    _init();
+    if (Platform.isAndroid) {
+      _init();
+    }
   }
 
   void _init() {

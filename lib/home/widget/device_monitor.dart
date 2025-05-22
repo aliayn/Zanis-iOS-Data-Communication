@@ -9,10 +9,10 @@ class DeviceMonitor extends StatefulWidget {
   final PlatformDetector platformDetector;
 
   const DeviceMonitor({
-    Key? key,
+    super.key,
     required this.dataSource,
     required this.platformDetector,
-  }) : super(key: key);
+  });
 
   @override
   State<DeviceMonitor> createState() => _DeviceMonitorState();

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/route_manager.dart';
-import 'package:zanis_ios_data_communication/home/widget/home_screen.dart';
+import 'package:zanis_ios_data_communication/data/device_data_source.dart';
+import 'package:zanis_ios_data_communication/data/platform_detector.dart';
+import 'package:zanis_ios_data_communication/di/injection.dart';
+import 'package:zanis_ios_data_communication/home/widget/device_monitor.dart';
 import 'package:zanis_ios_data_communication/utils/error_handler.dart';
-import 'mfi_monitor.dart';
 
 void main() {
   ErrorHandler(app: MyApp());
@@ -25,7 +27,7 @@ class MyApp extends StatelessWidget {
 }
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +35,10 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('MFi Device Monitor'),
       ),
-      body: const MFIMonitor(),
+      body: DeviceMonitor(
+        dataSource: inject<DeviceDataSource>(),
+        platformDetector: inject<PlatformDetector>(),
+      ),
     );
   }
 }

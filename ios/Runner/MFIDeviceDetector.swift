@@ -94,7 +94,8 @@ class MFiDeviceManager: NSObject {
     log("MFi device detection initialized")
     
     // Check for already connected accessories
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in 
+    // Use a shorter delay to check for already connected accessories when app starts
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in 
       self?.checkConnectedAccessories()
     }
   }
@@ -102,6 +103,9 @@ class MFiDeviceManager: NSObject {
   func startMonitoring() {
     if !isInitialized {
       initializeDeviceDetection()
+    } else {
+      // If already initialized, check for connected accessories again
+      checkConnectedAccessories()
     }
     log("Started monitoring for MFi devices")
   }
@@ -257,8 +261,8 @@ class MFiDeviceManager: NSObject {
     output.delegate = self
     
     // Important: Schedule streams before opening them
-    input.schedule(in: .main, forMode: .default)
-    output.schedule(in: .main, forMode: .default)
+    input.schedule(in: .main, forMode: .common)
+    output.schedule(in: .main, forMode: .common)
     
     // Open streams with a slight delay between them to prevent timing issues
     input.open()
@@ -276,17 +280,42 @@ class MFiDeviceManager: NSObject {
     // Stop any ongoing reconnection attempts
     stopReconnectionTimer()
     
-    // Initiate a read after a short delay to ensure stream is ready
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-      self?.readData()
-    }
+    // Start a continuous reading cycle - this is crucial for reliable data reception
+    startContinuousReading()
   }
 
+  // Add a continuous reading function to ensure we never miss data
+  private var isReadingContinuously = false
+  private var readingTimer: Timer?
+  
+  private func startContinuousReading() {
+    stopContinuousReading()
+    
+    isReadingContinuously = true
+    readingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+      self?.readData()
+    }
+    
+    // Also try to read immediately
+    readData()
+    
+    log("Started continuous reading cycle")
+  }
+  
+  private func stopContinuousReading() {
+    readingTimer?.invalidate()
+    readingTimer = nil
+    isReadingContinuously = false
+  }
+  
   private func disconnectFromAccessory() {
+    // Stop continuous reading before disconnecting
+    stopContinuousReading()
+    
     inputStream?.close()
     outputStream?.close()
-    inputStream?.remove(from: .main, forMode: .default)
-    outputStream?.remove(from: .main, forMode: .default)
+    inputStream?.remove(from: .main, forMode: .common)
+    outputStream?.remove(from: .main, forMode: .common)
     
     inputStream = nil
     outputStream = nil
@@ -369,13 +398,10 @@ extension MFiDeviceManager: StreamDelegate {
   func stream(_ aStream: Stream, handle eventCode: Stream.Event) {
     switch eventCode {
     case .openCompleted:
-      log("Stream opened successfully")
+      log("Stream opened successfully: \(aStream == inputStream ? "Input Stream" : "Output Stream")")
       // Start reading immediately after stream opens
       if aStream == inputStream {
-        // Allow a short delay for the stream to fully initialize
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-          self?.readData()
-        }
+        readData()
       }
     case .hasBytesAvailable:
       if aStream == inputStream {
@@ -397,7 +423,7 @@ extension MFiDeviceManager: StreamDelegate {
       }
       handleStreamError(aStream)
     case .endEncountered:
-      log("Stream ended")
+      log("Stream ended: \(aStream == inputStream ? "Input Stream" : "Output Stream")")
       handleStreamError(aStream)
     default:
       break
@@ -425,8 +451,26 @@ extension MFiDeviceManager: StreamDelegate {
   }
   
   private func readData() {
-    guard let inputStream = inputStream, inputStream.streamStatus == .open else {
-      log("⚠️ Cannot read data: Input stream not ready (status: \(inputStream?.streamStatus.rawValue.description ?? "nil"))")
+    guard let inputStream = inputStream else {
+      log("⚠️ Cannot read data: No input stream available")
+      return
+    }
+    
+    // Check stream status and attempt to recover if needed
+    if inputStream.streamStatus != .open {
+      log("⚠️ Input stream not open, current status: \(inputStream.streamStatus.rawValue)")
+      
+      // Try to reopen if not open
+      if inputStream.streamStatus != .opening {
+        log("Attempting to reopen input stream...")
+        inputStream.open()
+      }
+      
+      return
+    }
+    
+    // Don't try to read if no bytes are available
+    if !inputStream.hasBytesAvailable {
       return
     }
     
@@ -434,40 +478,36 @@ extension MFiDeviceManager: StreamDelegate {
     let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
     defer { buffer.deallocate() }
     
-    // Continue reading as long as there are bytes available
-    while inputStream.hasBytesAvailable {
-      let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
-      
-      if bytesRead > 0 {
-        let data = Data(bytes: buffer, count: bytesRead)
-        processReceivedData(data)
-        
-        // Log successful read
-        log("📥 Successfully read \(bytesRead) bytes from stream")
-      } else if bytesRead < 0 {
-        if let error = inputStream.streamError {
-          log("⚠️ Error reading from stream: \(error.localizedDescription)")
-          if let nsError = error as? NSError {
-            log("⚠️ Error domain: \(nsError.domain)")
-            log("⚠️ Error code: \(nsError.code)")
-          }
-        } else {
-          log("⚠️ Error reading from stream (no error details available)")
-        }
-        handleStreamError(inputStream)
-        break
-      } else {
-        // bytesRead == 0, which means end of stream
-        log("End of stream reached")
-        break
-      }
-    }
+    let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
     
-    // Schedule another read after a short delay to ensure continuous reading
-    if inputStream.streamStatus == .open {
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-        self?.readData()
+    if bytesRead > 0 {
+      let data = Data(bytes: buffer, count: bytesRead)
+      processReceivedData(data)
+      
+      // Log successful read
+      log("📥 Successfully read \(bytesRead) bytes from stream")
+      
+      // If more data is available, continue reading
+      if inputStream.hasBytesAvailable {
+        // Schedule immediate follow-up read for remaining data
+        DispatchQueue.main.async { [weak self] in
+          self?.readData()
+        }
       }
+    } else if bytesRead < 0 {
+      if let error = inputStream.streamError {
+        log("⚠️ Error reading from stream: \(error.localizedDescription)")
+        if let nsError = error as? NSError {
+          log("⚠️ Error domain: \(nsError.domain)")
+          log("⚠️ Error code: \(nsError.code)")
+        }
+      } else {
+        log("⚠️ Error reading from stream (no error details available)")
+      }
+      handleStreamError(inputStream)
+    } else {
+      // bytesRead == 0, which means end of stream or no data
+      log("No data available from stream")
     }
   }
   
