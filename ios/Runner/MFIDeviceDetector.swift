@@ -66,6 +66,12 @@ class MFiDeviceManager: NSObject {
     DispatchQueue.main.async { [weak self] in
       self?.checkConnectedAccessories()
     }
+    
+    // If app was launched by device, check immediately and more aggressively
+    if ProcessInfo.processInfo.environment["APP_LAUNCHED_BY_ACCESSORY"] == "true" {
+      log("🚀 App was launched by accessory - initializing immediately")
+      checkConnectedAccessoriesAggressively()
+    }
   }
 
   private func initializeDeviceDetection() {
@@ -110,6 +116,17 @@ class MFiDeviceManager: NSObject {
     log("Started monitoring for MFi devices")
   }
 
+  func refreshConnection() {
+    log("Manually refreshing connection...")
+    checkConnectedAccessoriesAggressively()
+    
+    // Also try to restart stream reading if needed
+    if let input = inputStream, input.streamStatus == .open {
+      log("Refreshing input stream reading")
+      readData()
+    }
+  }
+
   private func checkConnectedAccessories() {
     let accessories = accessoryManager.connectedAccessories
     if accessories.isEmpty {
@@ -122,7 +139,7 @@ class MFiDeviceManager: NSObject {
       log("Checking accessory: \(accessory.name)")
       if let protocolString = findSupportedProtocol(for: accessory) {
         log("Found supported accessory: \(accessory.name) (Protocol: \(protocolString))")
-        handleAccessoryConnected(accessory)
+      handleAccessoryConnected(accessory)
       } else {
         log("Accessory \(accessory.name) does not support required protocol")
         log("Available protocols: \(accessory.protocolStrings.joined(separator: ", "))")
@@ -307,7 +324,7 @@ class MFiDeviceManager: NSObject {
     readingTimer = nil
     isReadingContinuously = false
   }
-  
+
   private func disconnectFromAccessory() {
     // Stop continuous reading before disconnecting
     stopContinuousReading()
@@ -360,13 +377,13 @@ class MFiDeviceManager: NSObject {
     var bytesSent = 0
     
     while bytesRemaining > 0 {
-      let bytesWritten = data.withUnsafeBytes { buffer in
+    let bytesWritten = data.withUnsafeBytes { buffer in
         outputStream.write(
           buffer.bindMemory(to: UInt8.self).baseAddress!.advanced(by: bytesSent),
           maxLength: bytesRemaining
         )
-      }
-      
+    }
+    
       if bytesWritten < 0 {
         if let error = outputStream.streamError {
           log("⚠️ Error sending data: \(error.localizedDescription)")
@@ -374,7 +391,7 @@ class MFiDeviceManager: NSObject {
             log("⚠️ Error domain: \(nsError.domain)")
             log("⚠️ Error code: \(nsError.code)")
           }
-        } else {
+    } else {
           log("⚠️ Error sending data (no error details available)")
         }
         return
@@ -391,6 +408,27 @@ class MFiDeviceManager: NSObject {
     }
     
     log("📤 Successfully sent \(bytesSent) bytes to MFi device")
+  }
+
+  // More aggressive checking for accessories when app is launched by device
+  private func checkConnectedAccessoriesAggressively() {
+    // Perform multiple checks with short delays to ensure we catch the device
+    checkConnectedAccessories()
+    
+    // Follow up with additional checks
+    for i in 1...5 {
+      DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) { [weak self] in
+        self?.checkConnectedAccessories()
+        
+        // On the last check, try to read data proactively from any connected device
+        if i == 5, let inputStream = self?.inputStream {
+          if inputStream.streamStatus == .open {
+            self?.log("Proactively reading data from input stream after app launch")
+            self?.readData()
+          }
+        }
+      }
+    }
   }
 }
 
@@ -469,11 +507,6 @@ extension MFiDeviceManager: StreamDelegate {
       return
     }
     
-    // Don't try to read if no bytes are available
-    if !inputStream.hasBytesAvailable {
-      return
-    }
-    
     let bufferSize = 4096 // Increased buffer size
     let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
     defer { buffer.deallocate() }
@@ -512,18 +545,57 @@ extension MFiDeviceManager: StreamDelegate {
   }
   
   private func processReceivedData(_ data: Data) {
-    // Log raw data for debugging
-    log("📥 Received raw data: \(data.map { String(format: "%02x", $0) }.joined())")
+    // Create a more human-readable representation of the data
+    let hexString = data.map { String(format: "%02x", $0) }.joined(separator: " ")
     
-    // Try to convert to string if possible
+    // Improved logging with better formatting
+    log("📥 Received data (\(data.count) bytes)")
+    
+    // Try to convert to string and log it in a readable format
     if let stringData = String(data: data, encoding: .utf8) {
-      log("📥 Received string data: \(stringData)")
+      // Clean up the string - remove control characters for display
+      let cleanedString = stringData
+        .replacingOccurrences(of: "\r", with: "\\r")
+        .replacingOccurrences(of: "\n", with: "\\n")
+        .replacingOccurrences(of: "\t", with: "\\t")
+      
+      // If it contains mostly printable characters, show it as text
+      let printableCharCount = stringData.unicodeScalars.filter { $0.isPrintable }.count
+      // Convert data.count to Double before multiplication to avoid type conversion error
+      let threshold = Double(data.count) * 0.8
+      let isPrintable = Double(printableCharCount) > threshold // 80% printable = human readable
+      
+      if isPrintable {
+        log("📥 Decoded as text: \"\(cleanedString)\"")
+      } else {
+        log("📥 Partially decoded (mixed binary/text): \"\(cleanedString)\"")
+        log("📥 Hex representation: \(hexString)")
+      }
+    } else {
+      // If not valid UTF-8, show as hex only
+      log("📥 Binary data (hex): \(hexString)")
     }
     
     // Forward data to Flutter immediately on the main thread
     DispatchQueue.main.async {
-      DataService.shared.didReceiveData(data)
+      // Ensure DataService is ready before sending data
+      if !DataService.shared.isReady {
+        self.log("⚠️ DataService not ready yet, buffering data for later delivery")
+        DataService.shared.bufferData(data)
+      } else {
+        DataService.shared.didReceiveData(data)
+      }
     }
   }
+}
+
+// Add extension to help with character validation
+extension Unicode.Scalar {
+    var isPrintable: Bool {
+        // Check for printable ASCII or common Unicode ranges
+        return (self.value >= 32 && self.value < 127) || // Printable ASCII
+               (self.value >= 0x1F600 && self.value <= 0x1F64F) || // Emoticons
+               (self.value >= 0x0080 && self.value <= 0x00FF) // Latin-1 Supplement
+    }
 }
 

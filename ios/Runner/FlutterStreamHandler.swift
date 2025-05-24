@@ -11,10 +11,35 @@ final class DataService {
     private init() {}
     
     public var eventSink: FlutterEventSink?
+    public var isReady: Bool {
+        return eventSink != nil
+    }
+    
+    // Buffer for data received before Flutter is ready
+    private var dataBuffer: [Data] = []
     
     func startMonitoring() {
         CDCDeviceManager.shared.delegate = self
         CDCDeviceManager.shared.startServer()
+        processBufferedData()
+    }
+    
+    func bufferData(_ data: Data) {
+        dataBuffer.append(data)
+        print("📦 Buffered data packet (size: \(data.count) bytes), buffer now contains \(dataBuffer.count) packets")
+    }
+    
+    func processBufferedData() {
+        guard !dataBuffer.isEmpty else { return }
+        
+        print("🔄 Processing \(dataBuffer.count) buffered data packets")
+        let bufferedData = dataBuffer
+        dataBuffer = []
+        
+        // Process each buffered data packet
+        for data in bufferedData {
+            didReceiveData(data)
+        }
     }
     
     func sendDeviceInfo(vid: String?, pid: String?) {
@@ -29,7 +54,11 @@ final class DataService {
     
     private func sendEvent(_ data: [String: Any]) {
         DispatchQueue.main.async { [weak self] in
-            self?.eventSink?(data)
+            if let sink = self?.eventSink {
+                sink(data)
+            } else {
+                print("⚠️ Event sink not available, can't send event")
+            }
         }
     }
 }
