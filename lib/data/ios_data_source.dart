@@ -2,6 +2,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 enum IOSEventType { data, status, deviceInfo, networkInterface }
 
@@ -61,10 +63,30 @@ class IOSEvent {
 class IOSDataSource {
   static const EventChannel _streamChannel = EventChannel('com.zanis.peertalk/device_info');
   static const MethodChannel _streamLogChannel = MethodChannel('com.zanis.peertalk/logs');
+  static const MethodChannel _deviceChannel = MethodChannel('com.zanis.device');
   final StreamController<String> _logController = StreamController<String>.broadcast();
 
   IOSDataSource() {
     _setupLogStream();
+    _initializeDataService();
+  }
+
+  // Initialize data service and mark it as ready
+  Future<void> _initializeDataService() async {
+    try {
+      // Wait a moment for Flutter to initialize
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Tell native code that Flutter is ready to receive data
+      await _deviceChannel.invokeMethod('isReady');
+
+      // Process any buffered data
+      await _deviceChannel.invokeMethod('processBufferedData');
+
+      debugPrint('iOS DataService initialized and marked as ready');
+    } catch (e) {
+      debugPrint('Error initializing iOS DataService: $e');
+    }
   }
 
   void _setupLogStream() {
@@ -75,6 +97,51 @@ class IOSDataSource {
         _logController.add(logData);
       }
     });
+  }
+
+  // Send data to the device
+  Future<bool> sendData(Uint8List data) async {
+    try {
+      await _deviceChannel.invokeMethod('sendData', data);
+      return true;
+    } catch (e) {
+      debugPrint('Error sending data to iOS device: $e');
+      return false;
+    }
+  }
+
+  // Send string data to the device
+  Future<bool> sendString(String text) async {
+    try {
+      final data = Uint8List.fromList(utf8.encode(text));
+      await _deviceChannel.invokeMethod('sendData', data);
+      return true;
+    } catch (e) {
+      debugPrint('Error sending string to iOS device: $e');
+      return false;
+    }
+  }
+
+  // Force refresh the connection
+  Future<bool> refreshConnection() async {
+    try {
+      await _deviceChannel.invokeMethod('refreshConnection');
+      return true;
+    } catch (e) {
+      debugPrint('Error refreshing iOS device connection: $e');
+      return false;
+    }
+  }
+
+  // Check if any buffered data needs to be processed
+  Future<bool> processBufferedData() async {
+    try {
+      await _deviceChannel.invokeMethod('processBufferedData');
+      return true;
+    } catch (e) {
+      debugPrint('Error processing buffered data: $e');
+      return false;
+    }
   }
 
   Stream<String> get logStream => _logController.stream;

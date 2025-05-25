@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:zanis_ios_data_communication/data/device_data_source.dart';
+import 'package:zanis_ios_data_communication/data/ios_data_source.dart';
 import 'package:zanis_ios_data_communication/data/platform_detector.dart';
 
 class DeviceMonitor extends StatefulWidget {
@@ -32,6 +33,11 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
   void initState() {
     super.initState();
     _setupStreams();
+
+    // After a brief delay, check for buffered data
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForBufferedData();
+    });
   }
 
   void _setupStreams() {
@@ -140,6 +146,16 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
     }
   }
 
+  Future<void> _checkForBufferedData() async {
+    if (widget.platformDetector.isIOS) {
+      // Get the underlying iOS data source through dependency injection
+      final iosDataSource = IOSDataSource();
+
+      // Process any buffered data (especially important when app is launched by device)
+      await iosDataSource.processBufferedData();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final platformName = widget.platformDetector.isAndroid
@@ -187,7 +203,7 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
             ),
           ),
         ),
-
+    
         // Send data
         Card(
           margin: const EdgeInsets.all(8.0),
@@ -225,7 +241,7 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
             ),
           ),
         ),
-
+    
         // Tabs for logs and received data
         Expanded(
           child: DefaultTabController(
@@ -257,7 +273,7 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
                           );
                         },
                       ),
-
+                
                       // Logs tab
                       ListView.builder(
                         controller: _logScrollController,

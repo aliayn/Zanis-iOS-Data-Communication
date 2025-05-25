@@ -313,6 +313,9 @@ class MFiDeviceManager: NSObject {
       self?.readData()
     }
     
+    // Make sure the timer is scheduled in the common run loop mode
+    RunLoop.main.add(readingTimer!, forMode: .common)
+    
     // Also try to read immediately
     readData()
     
@@ -416,14 +419,15 @@ class MFiDeviceManager: NSObject {
     checkConnectedAccessories()
     
     // Follow up with additional checks
-    for i in 1...5 {
-      DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) { [weak self] in
+    for i in 1...10 {  // Increased from 5 to 10 checks
+      DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.3) { [weak self] in
+        self?.log("Aggressive check #\(i) for connected accessories")
         self?.checkConnectedAccessories()
         
-        // On the last check, try to read data proactively from any connected device
-        if i == 5, let inputStream = self?.inputStream {
+        // Try to read data proactively from any connected device
+        if let inputStream = self?.inputStream {
           if inputStream.streamStatus == .open {
-            self?.log("Proactively reading data from input stream after app launch")
+            self?.log("Proactively reading data from input stream during aggressive check #\(i)")
             self?.readData()
           }
         }
@@ -511,6 +515,7 @@ extension MFiDeviceManager: StreamDelegate {
     let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
     defer { buffer.deallocate() }
     
+    // Always attempt to read data, regardless of hasBytesAvailable
     let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
     
     if bytesRead > 0 {
@@ -540,7 +545,7 @@ extension MFiDeviceManager: StreamDelegate {
       handleStreamError(inputStream)
     } else {
       // bytesRead == 0, which means end of stream or no data
-      log("No data available from stream")
+      log("No data available from stream at this moment")
     }
   }
   
@@ -578,12 +583,16 @@ extension MFiDeviceManager: StreamDelegate {
     
     // Forward data to Flutter immediately on the main thread
     DispatchQueue.main.async {
-      // Ensure DataService is ready before sending data
-      if !DataService.shared.isReady {
-        self.log("⚠️ DataService not ready yet, buffering data for later delivery")
-        DataService.shared.bufferData(data)
+      // Always buffer the data, and process it when ready
+      self.log("📥 Buffering received data for delivery")
+      DataService.shared.bufferData(data)
+      
+      // If DataService is ready, process the data immediately
+      if DataService.shared.isReady {
+        self.log("📥 DataService is ready, processing data immediately")
+        DataService.shared.processBufferedData()
       } else {
-        DataService.shared.didReceiveData(data)
+        self.log("⚠️ DataService not ready yet, data buffered for later processing")
       }
     }
   }

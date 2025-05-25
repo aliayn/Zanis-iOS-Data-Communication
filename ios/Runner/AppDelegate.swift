@@ -14,11 +14,23 @@ import ExternalAccessory
     
     // Check for external accessory launch using EAAccessoryKey
     let externalAccessoryLaunch = launchOptions?.keys.contains(where: { $0.rawValue == "UIApplicationLaunchOptionsAccessoryKey" }) ?? false
-    if externalAccessoryLaunch {
-      print("App was launched specifically by an External Accessory")
+    
+    // Additional check for EAAccessoryKey specifically
+    let eaAccessoryKey: UIApplication.LaunchOptionsKey? = UIApplication.LaunchOptionsKey(rawValue: "UIApplicationLaunchOptionsAccessoryKey")
+    let accessoryLaunch = launchOptions?[eaAccessoryKey!] != nil
+    
+    // Log the launch options for debugging
+    if let options = launchOptions {
+      print("App launched with options: \(options.keys.map { $0.rawValue })")
+    } else {
+      print("App launched without options")
+    }
+    
+    if externalAccessoryLaunch || accessoryLaunch {
+      print("🚀 App was launched specifically by an External Accessory")
       setenv("APP_LAUNCHED_BY_ACCESSORY", "true", 1)
     } else if launchedByAccessory {
-      print("App was launched by an accessory or external source")
+      print("🚀 App was launched by an accessory or external source")
       setenv("APP_LAUNCHED_BY_ACCESSORY", "true", 1)
     }
     
@@ -50,7 +62,17 @@ import ExternalAccessory
       case "processBufferedData":
         // Process any data that was received before Flutter was ready
         DataService.shared.processBufferedData()
-        result(nil)
+        result(true)
+      case "refreshConnection":
+        // Manually refresh the connection
+        MFiDeviceManager.shared.refreshConnection()
+        result(true)
+      case "isReady":
+        // Mark the DataService as ready to receive data
+        DataService.shared.isReady = true
+        // Try to process any buffered data immediately
+        DataService.shared.processBufferedData()
+        result(true)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -61,9 +83,20 @@ import ExternalAccessory
     
     // For app launch by accessory, start services immediately and more aggressively
     if getenv("APP_LAUNCHED_BY_ACCESSORY") != nil {
-      // Trigger a read cycle after a short delay to ensure we catch any data
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-        MFiDeviceManager.shared.refreshConnection()
+      print("🚀 App launched by accessory - setting up aggressive device checking")
+      
+      // Make multiple attempts to refresh connection at different intervals
+      for i in 1...5 {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.3) {
+          print("🔄 Refresh attempt #\(i) for device connection")
+          MFiDeviceManager.shared.refreshConnection()
+        }
+      }
+      
+      // Try to process any buffered data shortly after app launch
+      DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        print("🔄 Processing any buffered data after launch")
+        DataService.shared.processBufferedData()
       }
     }
     

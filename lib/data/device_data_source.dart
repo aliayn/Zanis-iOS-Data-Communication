@@ -135,8 +135,7 @@ class DeviceDataSource {
   Future<bool> sendData(Uint8List data) async {
     if (_platformDetector.isIOS) {
       // Convert to Flutter standard typed data for iOS channel
-      // TODO: Implement iOS-specific sending
-      return true;
+      return await _iosDataSource.sendData(data);
     } else if (_platformDetector.isAndroid) {
       return await _androidDataSource.sendData(data);
     } else {
@@ -147,8 +146,7 @@ class DeviceDataSource {
 
   Future<bool> sendString(String text) async {
     if (_platformDetector.isIOS) {
-      // TODO: Implement iOS-specific sending
-      return true;
+      return await _iosDataSource.sendString(text);
     } else if (_platformDetector.isAndroid) {
       return await _androidDataSource.sendString(text);
     } else {
@@ -159,7 +157,9 @@ class DeviceDataSource {
 
   Future<List<dynamic>> getAvailableDevices() async {
     if (_platformDetector.isIOS) {
-      // TODO: Implement iOS-specific device listing
+      // iOS doesn't support explicit device listing
+      // We can use refreshConnection to force a connection check
+      await _iosDataSource.refreshConnection();
       return [];
     } else if (_platformDetector.isAndroid) {
       return await _androidDataSource.getAvailableDevices();

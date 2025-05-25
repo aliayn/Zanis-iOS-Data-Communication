@@ -11,16 +11,21 @@ final class DataService {
     private init() {}
     
     public var eventSink: FlutterEventSink?
-    public var isReady: Bool {
-        return eventSink != nil
-    }
+    public var isReady: Bool = false // Changed to manually track readiness
     
     // Buffer for data received before Flutter is ready
     private var dataBuffer: [Data] = []
+    private var connectionStatusBuffer: Bool? = nil
+    private var deviceInfoBuffer: [String: String]? = nil
     
     func startMonitoring() {
         CDCDeviceManager.shared.delegate = self
         CDCDeviceManager.shared.startServer()
+        
+        // Mark as ready
+        isReady = true
+        
+        // Process any buffered data
         processBufferedData()
     }
     
@@ -29,7 +34,30 @@ final class DataService {
         print("📦 Buffered data packet (size: \(data.count) bytes), buffer now contains \(dataBuffer.count) packets")
     }
     
+    func bufferConnectionStatus(_ isConnected: Bool) {
+        connectionStatusBuffer = isConnected
+        print("📦 Buffered connection status: \(isConnected)")
+    }
+    
+    func bufferDeviceInfo(vid: String?, pid: String?) {
+        deviceInfoBuffer = ["vid": vid ?? "unknown", "pid": pid ?? "unknown"]
+        print("📦 Buffered device info: VID=\(vid ?? "unknown"), PID=\(pid ?? "unknown")")
+    }
+    
     func processBufferedData() {
+        // First, send connection status if buffered
+        if let status = connectionStatusBuffer {
+            connectionStatusChanged(status)
+            connectionStatusBuffer = nil
+        }
+        
+        // Then, send device info if buffered
+        if let info = deviceInfoBuffer {
+            sendDeviceInfo(vid: info["vid"], pid: info["pid"])
+            deviceInfoBuffer = nil
+        }
+        
+        // Finally, process buffered data packets
         guard !dataBuffer.isEmpty else { return }
         
         print("🔄 Processing \(dataBuffer.count) buffered data packets")
@@ -49,15 +77,40 @@ final class DataService {
             "pid": pid ?? "unknown",
             "type": "deviceInfo"
         ]
+        
+        // If not ready, buffer the device info
+        if !isReady {
+            bufferDeviceInfo(vid: vid, pid: pid)
+            return
+        }
+        
         sendEvent(deviceInfo)
     }
     
     private func sendEvent(_ data: [String: Any]) {
         DispatchQueue.main.async { [weak self] in
-            if let sink = self?.eventSink {
+            if let sink = self?.eventSink, self?.isReady == true {
                 sink(data)
             } else {
-                print("⚠️ Event sink not available, can't send event")
+                print("⚠️ Event sink not available or service not ready, can't send event")
+                
+                // If this was connection status data, buffer it
+                if let type = data["type"] as? String, type == "status",
+                   let connected = data["connected"] as? Bool {
+                    self?.bufferConnectionStatus(connected)
+                }
+                // If this was device info data, buffer it
+                else if let type = data["type"] as? String, type == "deviceInfo",
+                        let vid = data["vid"] as? String,
+                        let pid = data["pid"] as? String {
+                    self?.bufferDeviceInfo(vid: vid, pid: pid)
+                }
+                // If this was regular data, buffer it if it can be converted back to Data
+                else if let type = data["type"] as? String, type == "data",
+                        let base64String = data["data"] as? String,
+                        let decodedData = Data(base64Encoded: base64String) {
+                    self?.bufferData(decodedData)
+                }
             }
         }
     }
@@ -76,6 +129,13 @@ extension DataService: CDCDeviceManagerDelegate {
             "data": data.base64EncodedString(),
             "type": "data"
         ]
+        
+        // If not ready, buffer the data
+        if !isReady || eventSink == nil {
+            bufferData(data)
+            return
+        }
+        
         print("📤 Forwarding data packet: \(payload["timestamp"]!)")
         sendEvent(payload)
     }
@@ -86,6 +146,13 @@ extension DataService: CDCDeviceManagerDelegate {
             "connected": isConnected,
             "type": "status"
         ]
+        
+        // If not ready, buffer the status
+        if !isReady || eventSink == nil {
+            bufferConnectionStatus(isConnected)
+            return
+        }
+        
         print("🌐 Connection status changed: \(isConnected ? "Connected" : "Disconnected")")
         sendEvent(status)
     }
