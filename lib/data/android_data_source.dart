@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -40,6 +41,7 @@ class AndroidDataSource {
   StreamSubscription<String>? _dataSubscription;
   StreamSubscription<UsbEvent>? _usbEventSubscription;
   Timer? _readTimer;
+  bool _isReading = false;
 
   final StreamController<AndroidEvent> _eventController = StreamController<AndroidEvent>.broadcast();
   final StreamController<String> _logController = StreamController<String>.broadcast();
@@ -131,11 +133,8 @@ class AndroidDataSource {
     await _disconnect();
 
     try {
-      // Android USB permissions are handled by the plugin internally
-      // We don't need to explicitly request permission
-
       _log('Creating port for device...');
-      // Create port
+      // Create port - this will request permission if needed
       _port = await device.create();
 
       if (_port == null) {
@@ -157,28 +156,8 @@ class AndroidDataSource {
       await _port!.setDTR(true);
       await _port!.setRTS(true);
 
-      // Try different baud rates if needed
-      try {
-        await _port!.setPortParameters(
-          115200, // Baud rate
-          UsbPort.DATABITS_8,
-          UsbPort.STOPBITS_1,
-          UsbPort.PARITY_NONE,
-        );
-      } catch (e) {
-        _log('Error setting port parameters: $e, trying alternative baud rate');
-        try {
-          await _port!.setPortParameters(
-            9600, // Alternative baud rate
-            UsbPort.DATABITS_8,
-            UsbPort.STOPBITS_1,
-            UsbPort.PARITY_NONE,
-          );
-        } catch (e) {
-          _log('Error setting alternative port parameters: $e');
-          // Continue anyway, some devices work without explicit parameters
-        }
-      }
+      // Try different baud rates
+      await _tryConfigurePort();
 
       _device = device;
 
@@ -205,7 +184,8 @@ class AndroidDataSource {
         );
       } catch (e) {
         _log('Error setting up transaction: $e');
-        // Even if transaction setup fails, we'll try to use the raw input stream
+        // Even if transaction setup fails, we'll try to use direct reading
+        _startDirectReading();
       }
 
       // Start a polling timer as a backup mechanism for devices that don't trigger stream events properly
@@ -227,26 +207,109 @@ class AndroidDataSource {
     }
   }
 
+  Future<void> _tryConfigurePort() async {
+    // Try different common baud rates in sequence
+    List<int> baudRates = [115200, 9600, 57600, 38400, 19200];
+
+    for (int baudRate in baudRates) {
+      try {
+        _log('Trying baud rate: $baudRate');
+        await _port!.setPortParameters(
+          baudRate,
+          UsbPort.DATABITS_8,
+          UsbPort.STOPBITS_1,
+          UsbPort.PARITY_NONE,
+        );
+        _log('Successfully set baud rate to $baudRate');
+        return;
+      } catch (e) {
+        _log('Failed to set baud rate $baudRate: $e');
+        // Continue to the next baud rate
+      }
+    }
+
+    _log('Could not set any standard baud rate, continuing without explicit rate');
+  }
+
+  void _startDirectReading() {
+    _log('Setting up direct reading from port');
+
+    if (_port?.inputStream == null) {
+      _log('Input stream not available');
+      return;
+    }
+
+    // Create a transaction that processes any received bytes as a string
+    try {
+      // Use a basic transaction with no terminator, which will give us all received bytes
+      _transaction = Transaction.stringTerminated(
+        _port!.inputStream as Stream<Uint8List>,
+        Uint8List.fromList([]), // No terminator, process all data
+      );
+
+      // Listen for data
+      _dataSubscription = _transaction!.stream.listen(
+        (String data) {
+          if (data.isNotEmpty) {
+            _log('Received raw data: $data');
+            _sendEvent(AndroidEvent.fromData(
+              type: AndroidEventType.data,
+              payload: data,
+            ));
+          }
+        },
+        onError: (error) {
+          // Ignore timeouts
+          if (!error.toString().contains('timeout')) {
+            _log('Direct reading error: $error');
+          }
+        },
+      );
+
+      _log('Direct reading set up successfully');
+    } catch (e) {
+      _log('Failed to set up direct reading: $e');
+    }
+  }
+
   void _startPollingTimer() {
     _stopPollingTimer();
 
     // Create a polling timer that periodically checks for data
     _readTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) async {
-      try {
-        if (_port == null || _device == null) {
-          _stopPollingTimer();
-          return;
-        }
-
-        // Try to read data directly if no data is coming through the transaction
-        if (_port!.inputStream != null) {
-          // Just referencing the stream keeps it active
-          // The transaction should handle the actual data reception
-        }
-      } catch (e) {
-        _log('Error in polling timer: $e');
-      }
+      await _pollForData();
     });
+  }
+
+  Future<void> _pollForData() async {
+    if (_isReading || _port == null || _device == null) {
+      return;
+    }
+
+    _isReading = true;
+
+    try {
+      // Try to read data directly if no data is coming through the transaction
+      if (_transaction == null && _port != null && _port!.inputStream != null) {
+        try {
+          // Try to read directly from the inputStream
+          var stream = _port!.inputStream;
+          if (stream != null) {
+            // The inputStream is already a Stream<Uint8List> that we can listen to
+            // but we don't want to create multiple listeners, so we'll use the transaction
+            // pattern in the future. For now, we're just keeping the stream active.
+            _log('Input stream is active');
+          }
+        } catch (e) {
+          // Ignore read timeouts
+          if (!e.toString().contains('timeout')) {
+            _log('Error accessing input stream: $e');
+          }
+        }
+      }
+    } finally {
+      _isReading = false;
+    }
   }
 
   void _stopPollingTimer() {
@@ -307,12 +370,15 @@ class AndroidDataSource {
         // If write returns a Future, await it
         if (writeResult is Future) {
           writeResult = await writeResult;
+          _log('Write result: $writeResult');
         }
 
-        // Log the result but don't rely on its type for success determination
+        // Consider the operation successful if no exception is thrown
         _log('Data sent successfully');
 
-        // Consider the operation successful if no exception is thrown
+        // Read any response after sending (some devices need this)
+        Future.delayed(Duration(milliseconds: 100), _pollForData);
+
         return true;
       } on PlatformException catch (e) {
         _log('Platform exception sending data: ${e.message}');
@@ -330,7 +396,8 @@ class AndroidDataSource {
   Future<bool> sendString(String text) async {
     try {
       _log('Sending string: $text');
-      final data = Uint8List.fromList([...text.codeUnits, 13, 10]); // Add CR+LF
+      // Add CR+LF for line termination
+      final data = Uint8List.fromList([...text.codeUnits, 13, 10]);
       return await sendData(data);
     } catch (e) {
       _log('Error in sendString: $e');

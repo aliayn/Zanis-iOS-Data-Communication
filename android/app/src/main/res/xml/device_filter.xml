@@ -1,26 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Use the same VID/PID as in iOS side -->
-    <usb-device vendor-id="0x0000" product-id="0x0000" />
-    <!-- Replace with your actual VID/PID -->
-
-    <!-- Your specific CH340 device -->
-    <usb-device vendor-id="0x1A86" product-id="0x7523" />
-    <!-- CH340 -->
-
-    <!-- Common USB-to-Serial adapters -->
-    <!-- FTDI FT232R UART -->
-    <usb-device vendor-id="1027" product-id="24577" />
-
-    <!-- FTDI FT231X -->
-    <usb-device vendor-id="1027" product-id="24597" />
-
-    <!-- CH340 JLink (alternative format) -->
+    <!-- USB serial devices -->
     <usb-device vendor-id="6790" product-id="29987" />
-
-    <!-- CP210x UART Bridge -->
-    <usb-device vendor-id="4292" product-id="60000" />
-
-    <!-- Prolific PL2303 -->
+    <!-- CH340 0x1A86/0x7523 -->
+    <usb-device vendor-id="1027" product-id="24577" />
+    <!-- FTDI -->
+    <usb-device vendor-id="1027" product-id="24592" />
+    <!-- FTDI -->
+    <usb-device vendor-id="1027" product-id="24593" />
+    <!-- FTDI -->
+    <usb-device vendor-id="1027" product-id="24596" />
+    <!-- FTDI -->
+    <usb-device vendor-id="1027" product-id="24597" />
+    <!-- FTDI -->
+    <usb-device vendor-id="9025" product-id="16" />
+    <!-- Arduino -->
+    <usb-device vendor-id="9025" product-id="32" />
+    <!-- Arduino -->
+    <usb-device vendor-id="9025" product-id="67" />
+    <!-- Arduino -->
+    <usb-device vendor-id="5824" product-id="1155" />
+    <!-- Teensyduino  -->
     <usb-device vendor-id="1659" product-id="8963" />
+    <!-- Prolific PL2303 -->
+    <usb-device vendor-id="4292" product-id="60000" />
+    <!-- CP210x -->
+    <usb-device vendor-id="4292" product-id="60016" />
+    <!-- CP210x -->
+    <usb-device vendor-id="4292" product-id="60017" />
+    <!-- CP210x -->
+    <usb-device vendor-id="8087" product-id="12" />
+    <!-- Intel Edison -->
+    <usb-device vendor-id="6991" product-id="37744" />
+    <!-- QinHeng Electronics CH340 -->
+    <usb-device vendor-id="6991" product-id="37745" />
+    <!-- QinHeng Electronics CH341 -->
+    <usb-device vendor-id="1A86" product-id="7523" />
+    <!-- QinHeng Electronics CH340 in hex (same as above but in hex notation) -->
 </resources> 
