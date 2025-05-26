@@ -68,22 +68,49 @@ class IOSDataSource {
 
   IOSDataSource() {
     _setupLogStream();
+
+    // Initialize data service immediately, don't wait
     _initializeDataService();
+
+    // Set up a periodic check to ensure data is processed
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      // Stop after 10 seconds
+      if (timer.tick > 10) {
+        timer.cancel();
+        return;
+      }
+
+      // Periodically check for buffered data
+      processBufferedData().then((success) {
+        if (success) {
+          debugPrint('Periodic buffered data check: processed data');
+        }
+      });
+    });
   }
 
   // Initialize data service and mark it as ready
   Future<void> _initializeDataService() async {
     try {
-      // Wait a moment for Flutter to initialize
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Reduce initial delay
+      await Future.delayed(const Duration(milliseconds: 100));
 
-      // Tell native code that Flutter is ready to receive data
+      // First mark as ready so any incoming data can be processed
       await _deviceChannel.invokeMethod('isReady');
+      debugPrint('iOS DataService marked as ready');
 
-      // Process any buffered data
+      // Then process any buffered data
       await _deviceChannel.invokeMethod('processBufferedData');
+      debugPrint('Initial buffered data processing complete');
 
-      debugPrint('iOS DataService initialized and marked as ready');
+      // Refresh connection to ensure device is properly detected
+      await _deviceChannel.invokeMethod('refreshConnection');
+      debugPrint('Connection refreshed during initialization');
+
+      // Process buffered data again after a short delay
+      await Future.delayed(const Duration(milliseconds: 300));
+      await _deviceChannel.invokeMethod('processBufferedData');
+      debugPrint('Second buffered data processing complete');
     } catch (e) {
       debugPrint('Error initializing iOS DataService: $e');
     }

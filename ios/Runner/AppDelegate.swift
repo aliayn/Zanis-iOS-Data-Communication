@@ -70,7 +70,9 @@ import ExternalAccessory
       case "isReady":
         // Mark the DataService as ready to receive data
         DataService.shared.isReady = true
-        // Try to process any buffered data immediately
+        // Mark Flutter as ready in the device manager
+        MFiDeviceManager.shared.markFlutterReady()
+        // Process any buffered data immediately
         DataService.shared.processBufferedData()
         result(true)
       default:
@@ -93,11 +95,26 @@ import ExternalAccessory
         }
       }
       
-      // Try to process any buffered data shortly after app launch
-      DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-        print("🔄 Processing any buffered data after launch")
+      // Create a persistent timer to keep checking for buffered data until Flutter reports ready
+      let checkBufferTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+        print("🔄 Checking buffered data during launch")
         DataService.shared.processBufferedData()
+        
+        // Stop after 10 seconds maximum if Flutter never becomes ready
+        if timer.fireDate.timeIntervalSinceNow > 10 {
+          print("⚠️ Stopping buffer check timer after timeout")
+          timer.invalidate()
+        }
+        
+        // Also stop if DataService becomes ready
+        if DataService.shared.isReady {
+          print("✅ DataService ready - stopping buffer check timer")
+          timer.invalidate()
+        }
       }
+      
+      // Make sure timer works in background modes
+      RunLoop.main.add(checkBufferTimer, forMode: .common)
     }
     
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

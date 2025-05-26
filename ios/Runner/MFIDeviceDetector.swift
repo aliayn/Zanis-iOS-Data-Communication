@@ -23,6 +23,9 @@ class MFiDeviceManager: NSObject {
   private let maxReconnectAttempts = 3
   private var reconnectAttempts = 0
   private var isInitialized = false
+  private var dataQueue = [Data]()
+  private var waitingForFlutterReady = false
+  private var flutterReadyTimer: Timer?
 
   override init() {
     super.init()
@@ -71,7 +74,7 @@ class MFiDeviceManager: NSObject {
     if ProcessInfo.processInfo.environment["APP_LAUNCHED_BY_ACCESSORY"] == "true" {
       log("🚀 App was launched by accessory - initializing immediately")
       checkConnectedAccessoriesAggressively()
-    }
+  }
   }
 
   private func initializeDeviceDetection() {
@@ -434,6 +437,101 @@ class MFiDeviceManager: NSObject {
       }
     }
   }
+
+  private func processReceivedData(_ data: Data) {
+    // Create a more human-readable representation of the data
+    let hexString = data.map { String(format: "%02x", $0) }.joined(separator: " ")
+    
+    // Improved logging with better formatting
+    log("📥 Received data (\(data.count) bytes)")
+    
+    // Try to convert to string and log it in a readable format
+    if let stringData = String(data: data, encoding: .utf8) {
+      // Clean up the string - remove control characters for display
+      let cleanedString = stringData
+        .replacingOccurrences(of: "\r", with: "\\r")
+        .replacingOccurrences(of: "\n", with: "\\n")
+        .replacingOccurrences(of: "\t", with: "\\t")
+      
+      // If it contains mostly printable characters, show it as text
+      let printableCharCount = stringData.unicodeScalars.filter { $0.isPrintable }.count
+      // Convert data.count to Double before multiplication to avoid type conversion error
+      let threshold = Double(data.count) * 0.8
+      let isPrintable = Double(printableCharCount) > threshold // 80% printable = human readable
+      
+      if isPrintable {
+        log("📥 Decoded as text: \"\(cleanedString)\"")
+      } else {
+        log("📥 Partially decoded (mixed binary/text): \"\(cleanedString)\"")
+        log("📥 Hex representation: \(hexString)")
+      }
+    } else {
+      // If not valid UTF-8, show as hex only
+      log("📥 Binary data (hex): \(hexString)")
+    }
+    
+    // Forward data to Flutter immediately on the main thread
+    DispatchQueue.main.async {
+      // Always buffer the data
+      self.log("📥 Buffering received data for delivery")
+      DataService.shared.bufferData(data)
+      
+      // If DataService is ready, process the data immediately
+      if DataService.shared.isReady {
+        self.log("📥 DataService is ready, processing data immediately")
+        DataService.shared.processBufferedData()
+      } else {
+        self.log("⚠️ DataService not ready yet, data buffered for later processing")
+        
+        // Start a timer to check periodically if Flutter is ready
+        if !self.waitingForFlutterReady {
+          self.waitingForFlutterReady = true
+          self.log("🕒 Starting timer to check for Flutter readiness")
+          
+          // Cancel any existing timer
+          self.flutterReadyTimer?.invalidate()
+          
+          // Create a new timer that checks periodically if Flutter is ready
+          self.flutterReadyTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+            
+            // Check if Flutter is ready now
+            if DataService.shared.isReady {
+              self.log("✅ Flutter is now ready, processing buffered data")
+              DataService.shared.processBufferedData()
+              
+              // Stop the timer
+              timer.invalidate()
+              self.flutterReadyTimer = nil
+              self.waitingForFlutterReady = false
+            } else {
+              self.log("🕒 Still waiting for Flutter to be ready...")
+            }
+          }
+          
+          // Make sure the timer works in background modes
+          RunLoop.main.add(self.flutterReadyTimer!, forMode: .common)
+        }
+      }
+    }
+  }
+
+  func markFlutterReady() {
+    log("📱 Flutter engine marked as ready")
+    DataService.shared.isReady = true
+    
+    // Process any buffered data immediately
+    DispatchQueue.main.async {
+      self.log("Processing buffered data after Flutter ready signal")
+      DataService.shared.processBufferedData()
+    }
+    
+    // If app was launched by device, check again for connected devices
+    if ProcessInfo.processInfo.environment["APP_LAUNCHED_BY_ACCESSORY"] == "true" {
+      log("🔄 App was launched by accessory - rechecking connections after Flutter ready")
+      refreshConnection()
+    }
+  }
 }
 
 extension MFiDeviceManager: StreamDelegate {
@@ -516,10 +614,10 @@ extension MFiDeviceManager: StreamDelegate {
     defer { buffer.deallocate() }
     
     // Always attempt to read data, regardless of hasBytesAvailable
-    let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
+      let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
     
-    if bytesRead > 0 {
-      let data = Data(bytes: buffer, count: bytesRead)
+      if bytesRead > 0 {
+        let data = Data(bytes: buffer, count: bytesRead)
       processReceivedData(data)
       
       // Log successful read
@@ -546,54 +644,6 @@ extension MFiDeviceManager: StreamDelegate {
     } else {
       // bytesRead == 0, which means end of stream or no data
       log("No data available from stream at this moment")
-    }
-  }
-  
-  private func processReceivedData(_ data: Data) {
-    // Create a more human-readable representation of the data
-    let hexString = data.map { String(format: "%02x", $0) }.joined(separator: " ")
-    
-    // Improved logging with better formatting
-    log("📥 Received data (\(data.count) bytes)")
-    
-    // Try to convert to string and log it in a readable format
-    if let stringData = String(data: data, encoding: .utf8) {
-      // Clean up the string - remove control characters for display
-      let cleanedString = stringData
-        .replacingOccurrences(of: "\r", with: "\\r")
-        .replacingOccurrences(of: "\n", with: "\\n")
-        .replacingOccurrences(of: "\t", with: "\\t")
-      
-      // If it contains mostly printable characters, show it as text
-      let printableCharCount = stringData.unicodeScalars.filter { $0.isPrintable }.count
-      // Convert data.count to Double before multiplication to avoid type conversion error
-      let threshold = Double(data.count) * 0.8
-      let isPrintable = Double(printableCharCount) > threshold // 80% printable = human readable
-      
-      if isPrintable {
-        log("📥 Decoded as text: \"\(cleanedString)\"")
-      } else {
-        log("📥 Partially decoded (mixed binary/text): \"\(cleanedString)\"")
-        log("📥 Hex representation: \(hexString)")
-      }
-    } else {
-      // If not valid UTF-8, show as hex only
-      log("📥 Binary data (hex): \(hexString)")
-    }
-    
-    // Forward data to Flutter immediately on the main thread
-    DispatchQueue.main.async {
-      // Always buffer the data, and process it when ready
-      self.log("📥 Buffering received data for delivery")
-      DataService.shared.bufferData(data)
-      
-      // If DataService is ready, process the data immediately
-      if DataService.shared.isReady {
-        self.log("📥 DataService is ready, processing data immediately")
-        DataService.shared.processBufferedData()
-      } else {
-        self.log("⚠️ DataService not ready yet, data buffered for later processing")
-      }
     }
   }
 }
