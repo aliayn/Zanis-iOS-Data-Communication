@@ -24,6 +24,7 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
   final List<String> _receivedData = [];
   final ScrollController _logScrollController = ScrollController();
   final ScrollController _dataScrollController = ScrollController();
+  final ScrollController _mainScrollController = ScrollController();
   final TextEditingController _sendController = TextEditingController();
 
   bool _isConnected = false;
@@ -164,142 +165,148 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
             ? 'iOS'
             : 'Unsupported';
 
-    return Column(
-      children: [
-        // Platform and connection info
-        Card(
-          margin: const EdgeInsets.all(8.0),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Platform: $platformName', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      _isConnected ? Icons.usb : Icons.usb_off,
-                      color: _isConnected ? Colors.green : Colors.red,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _isConnected ? 'Connected' : 'Disconnected',
-                      style: TextStyle(
-                        color: _isConnected ? Colors.green : Colors.red,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(_deviceInfo),
-                const SizedBox(height: 8),
-                ElevatedButton(
-                  onPressed: _scanDevices,
-                  child: const Text('Scan for USB Devices'),
-                ),
-              ],
-            ),
-          ),
-        ),
-    
-        // Send data
-        Card(
-          margin: const EdgeInsets.all(8.0),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Send Data', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _sendController,
-                  decoration: const InputDecoration(
-                    hintText: 'Enter text or hex (e.g., "0x01 0x02 0x03")',
-                    border: OutlineInputBorder(),
-                  ),
-                  onSubmitted: (_) => _sendData(),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: _sendHexData,
-                      child: const Text('Send as Hex'),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: _sendData,
-                      child: const Text('Send as Text'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-    
-        // Tabs for logs and received data
-        Expanded(
-          child: DefaultTabController(
-            length: 2,
-            child: Column(
-              children: [
-                const TabBar(
-                  tabs: [
-                    Tab(text: 'Received Data'),
-                    Tab(text: 'Logs'),
-                  ],
-                  labelColor: Colors.blue,
-                ),
-                Expanded(
-                  child: TabBarView(
+    return SingleChildScrollView(
+      controller: _mainScrollController,
+      child: Column(
+        children: [
+          // Platform and connection info
+          Card(
+            margin: const EdgeInsets.all(8.0),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Platform: $platformName', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Row(
                     children: [
-                      // Received data tab
-                      ListView.builder(
-                        controller: _dataScrollController,
-                        padding: const EdgeInsets.all(8.0),
-                        itemCount: _receivedData.length,
-                        itemBuilder: (context, index) {
-                          return ListTile(
-                            dense: true,
-                            title: Text(
-                              _receivedData[index],
-                              style: const TextStyle(fontFamily: 'monospace'),
-                            ),
-                          );
-                        },
+                      Icon(
+                        _isConnected ? Icons.usb : Icons.usb_off,
+                        color: _isConnected ? Colors.green : Colors.red,
                       ),
-                
-                      // Logs tab
-                      ListView.builder(
-                        controller: _logScrollController,
-                        padding: const EdgeInsets.all(8.0),
-                        itemCount: _logs.length,
-                        itemBuilder: (context, index) {
-                          return ListTile(
-                            dense: true,
-                            title: Text(
-                              _logs[index],
-                              style: const TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 12,
-                              ),
-                            ),
-                          );
-                        },
+                      const SizedBox(width: 8),
+                      Text(
+                        _isConnected ? 'Connected' : 'Disconnected',
+                        style: TextStyle(
+                          color: _isConnected ? Colors.green : Colors.red,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Text(_deviceInfo),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: _scanDevices,
+                    child: const Text('Scan for USB Devices'),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+
+          // Send data
+          Card(
+            margin: const EdgeInsets.all(8.0),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Send Data', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _sendController,
+                    decoration: const InputDecoration(
+                      hintText: 'Enter text or hex (e.g., "0x01 0x02 0x03")',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (_) => _sendData(),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: _sendHexData,
+                        child: const Text('Send as Hex'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: _sendData,
+                        child: const Text('Send as Text'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Tabs for logs and received data
+          SizedBox(
+            height: MediaQuery.of(context).size.height * 0.5, // Fixed height for the tab content
+            child: DefaultTabController(
+              length: 2,
+              child: Column(
+                children: [
+                  const TabBar(
+                    tabs: [
+                      Tab(text: 'Received Data'),
+                      Tab(text: 'Logs'),
+                    ],
+                    labelColor: Colors.blue,
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        // Received data tab
+                        ListView.builder(
+                          physics: const NeverScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(8.0),
+                          itemCount: _receivedData.length,
+                          shrinkWrap: true,
+                          itemBuilder: (context, index) {
+                            return ListTile(
+                              dense: true,
+                              title: Text(
+                                _receivedData[index],
+                                style: const TextStyle(fontFamily: 'monospace'),
+                              ),
+                            );
+                          },
+                        ),
+
+                        // Logs tab
+                        ListView.builder(
+                          physics: const NeverScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(8.0),
+                          itemCount: _logs.length,
+                          shrinkWrap: true,
+                          itemBuilder: (context, index) {
+                            return ListTile(
+                              dense: true,
+                              title: Text(
+                                _logs[index],
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 12,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -307,6 +314,7 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
   void dispose() {
     _logScrollController.dispose();
     _dataScrollController.dispose();
+    _mainScrollController.dispose();
     _sendController.dispose();
     super.dispose();
   }

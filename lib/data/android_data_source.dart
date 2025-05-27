@@ -209,7 +209,8 @@ class AndroidDataSource {
 
   Future<void> _tryConfigurePort() async {
     // Try different common baud rates in sequence
-    List<int> baudRates = [115200, 9600, 57600, 38400, 19200];
+    // List<int> baudRates = [115200, 9600, 57600, 38400, 19200];
+    List<int> baudRates = [9600];
 
     for (int baudRate in baudRates) {
       try {

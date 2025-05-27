@@ -35,9 +35,11 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('MFi Device Monitor'),
       ),
-      body: DeviceMonitor(
-        dataSource: inject<DeviceDataSource>(),
-        platformDetector: inject<PlatformDetector>(),
+      body: SafeArea(
+        child: DeviceMonitor(
+          dataSource: inject<DeviceDataSource>(),
+          platformDetector: inject<PlatformDetector>(),
+        ),
       ),
     );
   }
