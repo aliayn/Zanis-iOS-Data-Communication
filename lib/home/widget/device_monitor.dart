@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -29,13 +30,14 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
 
   bool _isConnected = false;
   String _deviceInfo = 'No device connected';
+  CommunicationType _communicationType = CommunicationType.usbSerial;
 
   @override
   void initState() {
     super.initState();
     _setupStreams();
 
-    // After a brief delay, check for buffered data
+    // After a brief delay, check for buffered data (iOS only)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForBufferedData();
     });
@@ -77,6 +79,19 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
         _deviceInfo = 'Device: VID=${info['vid']}, PID=${info['pid']}';
       });
     });
+
+    // Vendor USB specific streams (only for Android)
+    if (widget.platformDetector.isAndroid) {
+      widget.dataSource.bulkTransferStream.listen((result) {
+        _logs.add('Bulk Transfer Result: $result');
+        _scrollToBottom(_logScrollController);
+      });
+
+      widget.dataSource.interruptTransferStream.listen((result) {
+        _logs.add('Interrupt Transfer Result: $result');
+        _scrollToBottom(_logScrollController);
+      });
+    }
   }
 
   void _scrollToBottom(ScrollController controller) {
@@ -89,6 +104,15 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
         );
       }
     });
+  }
+
+  void _switchCommunicationType(CommunicationType? type) {
+    if (type != null && type != _communicationType) {
+      setState(() {
+        _communicationType = type;
+      });
+      widget.dataSource.setCommunicationType(type);
+    }
   }
 
   Future<void> _sendData() async {
@@ -131,6 +155,64 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
     }
   }
 
+  Future<void> _sendBulkTransfer() async {
+    if (_communicationType != CommunicationType.vendorUsb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bulk transfer only available in Vendor USB mode')),
+      );
+      return;
+    }
+
+    if (!_isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No device connected')),
+      );
+      return;
+    }
+
+    final text = _sendController.text.trim();
+    if (text.isEmpty) return;
+
+    try {
+      final hexValues = text.split(' ').map((e) => int.parse(e.replaceAll('0x', ''), radix: 16)).toList();
+      await widget.dataSource.sendBulkTransfer(Uint8List.fromList(hexValues));
+      _sendController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Bulk transfer failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _sendInterruptTransfer() async {
+    if (_communicationType != CommunicationType.vendorUsb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Interrupt transfer only available in Vendor USB mode')),
+      );
+      return;
+    }
+
+    if (!_isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No device connected')),
+      );
+      return;
+    }
+
+    final text = _sendController.text.trim();
+    if (text.isEmpty) return;
+
+    try {
+      final hexValues = text.split(' ').map((e) => int.parse(e.replaceAll('0x', ''), radix: 16)).toList();
+      await widget.dataSource.sendInterruptTransfer(Uint8List.fromList(hexValues));
+      _sendController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Interrupt transfer failed: $e')),
+      );
+    }
+  }
+
   Future<void> _scanDevices() async {
     final devices = await widget.dataSource.getAvailableDevices();
 
@@ -148,13 +230,22 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
   }
 
   Future<void> _checkForBufferedData() async {
-    if (widget.platformDetector.isIOS) {
-      // Get the underlying iOS data source through dependency injection
-      final iosDataSource = IOSDataSource();
+    if (Platform.isIOS) {
+      try {
+        // Get the underlying iOS data source through dependency injection
+        final iosDataSource = IOSDataSource();
 
-      // Process any buffered data (especially important when app is launched by device)
-      await iosDataSource.processBufferedData();
+        // Process any buffered data (especially important when app is launched by device)
+        await iosDataSource.processBufferedData();
+      } catch (e) {
+        _log('Error processing buffered data: $e');
+      }
     }
+    // No buffered data processing needed for Android
+  }
+
+  void _log(String message) {
+    debugPrint('DeviceMonitor: $message');
   }
 
   @override
@@ -179,6 +270,35 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
                 children: [
                   Text('Platform: $platformName', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
+
+                  // Communication type selector (Android only)
+                  if (widget.platformDetector.isAndroid) ...[
+                    Text('Communication Type:', style: Theme.of(context).textTheme.titleSmall),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: RadioListTile<CommunicationType>(
+                            title: const Text('USB Serial'),
+                            value: CommunicationType.usbSerial,
+                            groupValue: _communicationType,
+                            onChanged: _switchCommunicationType,
+                            dense: true,
+                          ),
+                        ),
+                        Expanded(
+                          child: RadioListTile<CommunicationType>(
+                            title: const Text('Vendor USB'),
+                            value: CommunicationType.vendorUsb,
+                            groupValue: _communicationType,
+                            onChanged: _switchCommunicationType,
+                            dense: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+
                   Row(
                     children: [
                       Icon(
@@ -192,6 +312,11 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
                           color: _isConnected ? Colors.green : Colors.red,
                           fontWeight: FontWeight.bold,
                         ),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        'Mode: ${_communicationType == CommunicationType.usbSerial ? 'Serial' : 'Vendor'}',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
                   ),
@@ -226,18 +351,28 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
                     onSubmitted: (_) => _sendData(),
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                  Wrap(
+                    spacing: 8,
                     children: [
-                      TextButton(
-                        onPressed: _sendHexData,
-                        child: const Text('Send as Hex'),
-                      ),
-                      const SizedBox(width: 8),
                       ElevatedButton(
                         onPressed: _sendData,
                         child: const Text('Send as Text'),
                       ),
+                      TextButton(
+                        onPressed: _sendHexData,
+                        child: const Text('Send as Hex'),
+                      ),
+                      // Vendor USB specific buttons
+                      if (widget.platformDetector.isAndroid && _communicationType == CommunicationType.vendorUsb) ...[
+                        TextButton(
+                          onPressed: _sendBulkTransfer,
+                          child: const Text('Bulk Transfer'),
+                        ),
+                        TextButton(
+                          onPressed: _sendInterruptTransfer,
+                          child: const Text('Interrupt Transfer'),
+                        ),
+                      ],
                     ],
                   ),
                 ],
