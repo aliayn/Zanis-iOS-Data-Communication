@@ -46,41 +46,48 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
-                ACTION_USB_PERMISSION -> {
-                    synchronized(this) {
+            try {
+                when (intent.action) {
+                    ACTION_USB_PERMISSION -> {
+                        synchronized(this) {
+                            val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                            if (device != null) {
+                                if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                                    devicePermissions[getDeviceKey(device)] = true
+                                    log("USB permission granted for device: ${device.productName ?: "Unknown"}")
+                                    connectToDeviceInternal(device)
+                                } else {
+                                    devicePermissions[getDeviceKey(device)] = false
+                                    log("USB permission denied for device: ${device.productName ?: "Unknown"}")
+                                    sendEvent("connection_status", false)
+                                }
+                            } else {
+                                log("USB permission intent received with null device")
+                            }
+                        }
+                    }
+                    UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                         val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                        if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                            device?.let { 
-                                devicePermissions[getDeviceKey(it)] = true
-                                log("USB permission granted for device: ${it.productName}")
-                                connectToDeviceInternal(it)
+                        device?.let {
+                            log("USB device attached: ${it.productName ?: "Unknown"}")
+                            sendEvent("device_attached", createDeviceInfo(it))
+                        } ?: log("USB device attached but device is null")
+                    }
+                    UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                        val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                        device?.let {
+                            log("USB device detached: ${it.productName ?: "Unknown"}")
+                            if (it == currentDevice) {
+                                log("Current device detached, disconnecting...")
+                                disconnectDevice()
                             }
-                        } else {
-                            device?.let { 
-                                devicePermissions[getDeviceKey(it)] = false
-                                log("USB permission denied for device: ${it.productName}")
-                            }
-                        }
+                            sendEvent("device_detached", createDeviceInfo(it))
+                        } ?: log("USB device detached but device is null")
                     }
                 }
-                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
-                    val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                    device?.let {
-                        log("USB device attached: ${it.productName}")
-                        sendEvent("device_attached", createDeviceInfo(it))
-                    }
-                }
-                UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                    val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                    device?.let {
-                        log("USB device detached: ${it.productName}")
-                        if (it == currentDevice) {
-                            disconnectDevice()
-                        }
-                        sendEvent("device_detached", createDeviceInfo(it))
-                    }
-                }
+            } catch (e: Exception) {
+                log("Error in USB receiver: ${e.message}")
+                // Don't crash the app, just log the error
             }
         }
     }
@@ -107,6 +114,10 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 result.success(true)
             }
             "scanDevices" -> {
+                if (usbManager == null) {
+                    result.error("NOT_INITIALIZED", "USB manager not initialized", null)
+                    return
+                }
                 result.success(scanDevices())
             }
             "requestPermission" -> {
@@ -211,19 +222,38 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     }
 
     private fun createDeviceInfo(device: UsbDevice): Map<String, Any> {
-        return mapOf(
-            "deviceId" to device.deviceId,
-            "deviceName" to (device.deviceName ?: "Unknown"),
-            "vendorId" to device.vendorId,
-            "productId" to device.productId,
-            "manufacturerName" to (device.manufacturerName ?: "Unknown"),
-            "productName" to (device.productName ?: "Unknown"),
-            "serialNumber" to (device.serialNumber ?: "Unknown"),
-            "interfaceCount" to device.interfaceCount,
-            "deviceClass" to device.deviceClass,
-            "deviceSubclass" to device.deviceSubclass,
-            "deviceProtocol" to device.deviceProtocol
-        )
+        return try {
+            mapOf(
+                "deviceId" to device.deviceId,
+                "deviceName" to (device.deviceName ?: "Unknown"),
+                "vendorId" to device.vendorId,
+                "productId" to device.productId,
+                "manufacturerName" to (device.manufacturerName ?: "Unknown"),
+                "productName" to (device.productName ?: "Unknown"),
+                "serialNumber" to (device.serialNumber ?: "Unknown"),
+                "interfaceCount" to device.interfaceCount,
+                "deviceClass" to device.deviceClass,
+                "deviceSubclass" to device.deviceSubclass,
+                "deviceProtocol" to device.deviceProtocol,
+                "hasEndpoints" to (device.interfaceCount > 0 && device.getInterface(0).endpointCount > 0)
+            )
+        } catch (e: Exception) {
+            log("Error creating device info: ${e.message}")
+            mapOf(
+                "deviceId" to device.deviceId,
+                "deviceName" to "Unknown",
+                "vendorId" to device.vendorId,
+                "productId" to device.productId,
+                "manufacturerName" to "Unknown",
+                "productName" to "Unknown",
+                "serialNumber" to "Unknown",
+                "interfaceCount" to 0,
+                "deviceClass" to 0,
+                "deviceSubclass" to 0,
+                "deviceProtocol" to 0,
+                "hasEndpoints" to false
+            )
+        }
     }
 
     private fun getDeviceKey(device: UsbDevice): String {
@@ -319,8 +349,22 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             // Cache endpoints
             cacheEndpoints(usbInterface)
 
-            log("Successfully connected to device: ${device.productName}")
+            // Validate that we have at least one endpoint
+            if (bulkInEndpoint == null && bulkOutEndpoint == null && 
+                interruptInEndpoint == null && interruptOutEndpoint == null) {
+                log("No valid endpoints found on device")
+                disconnectDevice()
+                return
+            }
+
+            log("Successfully connected to device: ${device.productName ?: "Unknown"}")
+            log("Available endpoints - BulkIn: ${bulkInEndpoint != null}, BulkOut: ${bulkOutEndpoint != null}, InterruptIn: ${interruptInEndpoint != null}, InterruptOut: ${interruptOutEndpoint != null}")
+            
+            // Only report connected after full validation
             sendEvent("connection_status", true)
+            
+            // Send device info
+            sendEvent("device_attached", createDeviceInfo(device))
 
             // Start reading data in background
             startDataReading()
@@ -328,6 +372,8 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         } catch (e: Exception) {
             log("Error connecting to device: ${e.message}")
             sendEvent("connection_status", false)
+            // Ensure cleanup on error
+            disconnectDevice()
         }
     }
 
@@ -364,7 +410,18 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
     private fun startDataReading() {
         readingJob?.cancel()
+        
+        // Only start reading if we have a bulk IN endpoint
+        if (bulkInEndpoint == null) {
+            log("No bulk IN endpoint available for reading")
+            return
+        }
+        
         readingJob = coroutineScope.launch {
+            log("Starting data reading loop")
+            var consecutiveErrors = 0
+            val maxConsecutiveErrors = 5
+            
             while (isActive && currentConnection != null && bulkInEndpoint != null) {
                 try {
                     val buffer = ByteArray(bulkInEndpoint!!.maxPacketSize)
@@ -373,18 +430,48 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                     )
                     
                     if (bytesRead > 0) {
+                        consecutiveErrors = 0 // Reset error counter on successful read
                         val data = buffer.sliceArray(0 until bytesRead)
-                        // Convert to string for compatibility with existing data flow
-                        val dataString = String(data, Charsets.UTF_8)
-                        sendEvent("data_received", dataString)
+                        
+                        try {
+                            // Try to convert to string, fallback to hex if not UTF-8
+                            val dataString = String(data, Charsets.UTF_8)
+                            sendEvent("data_received", dataString)
+                            log("Received data: $dataString (${bytesRead} bytes)")
+                        } catch (charException: Exception) {
+                            // If not valid UTF-8, send as hex string
+                            val hexString = data.joinToString(" ") { 
+                                "0x${it.toUByte().toString(16).padStart(2, '0')}" 
+                            }
+                            sendEvent("data_received", hexString)
+                            log("Received binary data: $hexString (${bytesRead} bytes)")
+                        }
+                    } else if (bytesRead < 0) {
+                        // Transfer error
+                        consecutiveErrors++
+                        if (consecutiveErrors >= maxConsecutiveErrors) {
+                            log("Too many consecutive transfer errors, stopping data reading")
+                            break
+                        }
+                        delay(200) // Longer delay on transfer error
                     }
+                    // bytesRead == 0 means timeout, which is normal
+                    
                 } catch (e: Exception) {
+                    consecutiveErrors++
                     if (isActive) {
-                        log("Error reading data: ${e.message}")
+                        log("Error reading data: ${e.message} (consecutive errors: $consecutiveErrors)")
+                        if (consecutiveErrors >= maxConsecutiveErrors) {
+                            log("Too many consecutive errors, stopping data reading")
+                            // Disconnect the device as it might be in a bad state
+                            disconnectDevice()
+                            break
+                        }
                     }
-                    delay(100) // Prevent tight loop on error
+                    delay(200) // Longer delay on error
                 }
             }
+            log("Data reading loop stopped")
         }
     }
 
@@ -506,26 +593,50 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     }
 
     private fun disconnectDevice() {
-        readingJob?.cancel()
-        readingJob = null
+        try {
+            log("Disconnecting device...")
+            
+            // Cancel reading job first
+            readingJob?.cancel()
+            readingJob = null
 
-        currentInterface?.let { usbInterface ->
-            currentConnection?.releaseInterface(usbInterface)
+            // Release interface safely
+            currentInterface?.let { usbInterface ->
+                try {
+                    currentConnection?.releaseInterface(usbInterface)
+                    log("Released USB interface")
+                } catch (e: Exception) {
+                    log("Error releasing interface: ${e.message}")
+                }
+            }
+
+            // Close connection safely
+            currentConnection?.let { connection ->
+                try {
+                    connection.close()
+                    log("Closed USB connection")
+                } catch (e: Exception) {
+                    log("Error closing connection: ${e.message}")
+                }
+            }
+            
+            // Clear all references
+            currentDevice = null
+            currentConnection = null
+            currentInterface = null
+            
+            bulkInEndpoint = null
+            bulkOutEndpoint = null
+            interruptInEndpoint = null
+            interruptOutEndpoint = null
+
+            sendEvent("connection_status", false)
+            log("Device disconnected successfully")
+            
+        } catch (e: Exception) {
+            log("Error during disconnect: ${e.message}")
+            sendEvent("connection_status", false)
         }
-
-        currentConnection?.close()
-        
-        currentDevice = null
-        currentConnection = null
-        currentInterface = null
-        
-        bulkInEndpoint = null
-        bulkOutEndpoint = null
-        interruptInEndpoint = null
-        interruptOutEndpoint = null
-
-        sendEvent("connection_status", false)
-        log("Device disconnected")
     }
 
     private fun sendEvent(type: String, payload: Any?) {

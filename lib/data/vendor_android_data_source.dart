@@ -77,57 +77,79 @@ class VendorAndroidDataSource {
   }
 
   void _handleNativeEvent(dynamic event) {
-    if (event is! Map) return;
+    try {
+      if (event is! Map) {
+        _log('Received invalid event format: $event');
+        return;
+      }
 
-    final eventMap = Map<String, dynamic>.from(event);
-    final eventType = eventMap['type'] as String?;
-    final payload = eventMap['payload'];
+      final eventMap = Map<String, dynamic>.from(event);
+      final eventType = eventMap['type'] as String?;
+      final payload = eventMap['payload'];
 
-    switch (eventType) {
-      case 'device_attached':
-        _handleDeviceAttached(payload);
-        break;
-      case 'device_detached':
-        _handleDeviceDetached(payload);
-        break;
-      case 'data_received':
-        _handleDataReceived(payload);
-        break;
-      case 'connection_status':
-        _handleConnectionStatus(payload);
-        break;
-      case 'bulk_transfer_result':
-        _handleBulkTransferResult(payload);
-        break;
-      case 'interrupt_transfer_result':
-        _handleInterruptTransferResult(payload);
-        break;
-      case 'log':
-        _log('Native: ${payload}');
-        break;
-      default:
-        _log('Unknown event type: $eventType');
+      if (eventType == null) {
+        _log('Received event with null type: $eventMap');
+        return;
+      }
+
+      switch (eventType) {
+        case 'device_attached':
+          _handleDeviceAttached(payload);
+          break;
+        case 'device_detached':
+          _handleDeviceDetached(payload);
+          break;
+        case 'data_received':
+          _handleDataReceived(payload);
+          break;
+        case 'connection_status':
+          _handleConnectionStatus(payload);
+          break;
+        case 'bulk_transfer_result':
+          _handleBulkTransferResult(payload);
+          break;
+        case 'interrupt_transfer_result':
+          _handleInterruptTransferResult(payload);
+          break;
+        case 'log':
+          _log('Native: ${payload ?? ""}');
+          break;
+        default:
+          _log('Unknown event type: $eventType');
+      }
+    } catch (e) {
+      _log('Error handling native event: $e');
     }
   }
 
   void _handleDeviceAttached(dynamic payload) {
     if (payload is Map) {
-      final deviceInfo = Map<String, dynamic>.from(payload);
-      _currentDevice = deviceInfo;
+      try {
+        final deviceInfo = Map<String, dynamic>.from(payload);
+        _currentDevice = deviceInfo;
 
-      _sendEvent(VendorAndroidEvent.fromData(
-        type: VendorAndroidEventType.deviceInfo,
-        payload: {
-          'vid': deviceInfo['vendorId']?.toString() ?? '0',
-          'pid': deviceInfo['productId']?.toString() ?? '0',
-          'deviceName': deviceInfo['deviceName'] ?? 'Unknown',
-          'manufacturerName': deviceInfo['manufacturerName'] ?? 'Unknown',
-          'productName': deviceInfo['productName'] ?? 'Unknown',
-        },
-      ));
+        _sendEvent(VendorAndroidEvent.fromData(
+          type: VendorAndroidEventType.deviceInfo,
+          payload: {
+            'vid': deviceInfo['vendorId']?.toString() ?? '0',
+            'pid': deviceInfo['productId']?.toString() ?? '0',
+            'deviceName': deviceInfo['deviceName'] ?? 'Unknown',
+            'manufacturerName': deviceInfo['manufacturerName'] ?? 'Unknown',
+            'productName': deviceInfo['productName'] ?? 'Unknown',
+            'hasEndpoints': deviceInfo['hasEndpoints'] ?? false,
+          },
+        ));
 
-      _log(
-          'Vendor USB device attached: ${deviceInfo['productName']} (VID: ${deviceInfo['vendorId']}, PID: ${deviceInfo['productId']})');
+        _log(
+            'Vendor USB device attached: ${deviceInfo['productName']} (VID: ${deviceInfo['vendorId']}, PID: ${deviceInfo['productId']})');
+
+        // Auto-request permission and connect if not already connected
+        if (!_isConnected) {
+          _autoConnectDevice(deviceInfo);
+        }
+      } catch (e) {
+        _log('Error handling device attached event: $e');
+      }
     }
   }
 
@@ -171,6 +193,31 @@ class VendorAndroidDataSource {
         payload: payload,
       ));
       _log('Connection status changed: ${payload ? 'Connected' : 'Disconnected'}');
+    }
+  }
+
+  Future<void> _autoConnectDevice(Map<String, dynamic> deviceInfo) async {
+    try {
+      _log('Auto-connecting to device: ${deviceInfo['productName']}');
+
+      // First request permission
+      final permissionGranted = await requestPermission(deviceInfo);
+      if (permissionGranted) {
+        // Small delay to ensure permission is processed
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // Then connect
+        final connected = await connectToDevice(deviceInfo);
+        if (connected) {
+          _log('Auto-connection successful');
+        } else {
+          _log('Auto-connection failed');
+        }
+      } else {
+        _log('Auto-connection failed: Permission denied');
+      }
+    } catch (e) {
+      _log('Error during auto-connection: $e');
     }
   }
 

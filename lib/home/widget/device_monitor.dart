@@ -45,52 +45,118 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
 
   void _setupStreams() {
     // Log stream
-    widget.dataSource.logStream.listen((log) {
-      setState(() {
-        _logs.add(log);
-        if (_logs.length > 100) {
-          _logs.removeAt(0);
+    widget.dataSource.logStream.listen(
+      (log) {
+        if (mounted) {
+          setState(() {
+            _logs.add('${DateTime.now().toString().substring(11, 19)}: $log');
+            if (_logs.length > 100) {
+              _logs.removeAt(0);
+            }
+            _scrollToBottom(_logScrollController);
+          });
         }
-        _scrollToBottom(_logScrollController);
-      });
-    });
+      },
+      onError: (error) {
+        _log('Log stream error: $error');
+      },
+    );
 
     // Data stream
-    widget.dataSource.dataStream.listen((data) {
-      setState(() {
-        _receivedData.add(data);
-        if (_receivedData.length > 100) {
-          _receivedData.removeAt(0);
+    widget.dataSource.dataStream.listen(
+      (data) {
+        if (mounted) {
+          setState(() {
+            _receivedData.add('${DateTime.now().toString().substring(11, 19)}: $data');
+            if (_receivedData.length > 100) {
+              _receivedData.removeAt(0);
+            }
+            _scrollToBottom(_dataScrollController);
+          });
         }
-        _scrollToBottom(_dataScrollController);
-      });
-    });
+      },
+      onError: (error) {
+        _log('Data stream error: $error');
+      },
+    );
 
     // Connection status stream
-    widget.dataSource.connectionStream.listen((connected) {
-      setState(() {
-        _isConnected = connected;
-      });
-    });
+    widget.dataSource.connectionStream.listen(
+      (connected) {
+        if (mounted) {
+          setState(() {
+            _isConnected = connected;
+          });
+
+          // Show connection status change
+          if (connected) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('USB Device Connected'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('USB Device Disconnected'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      },
+      onError: (error) {
+        _log('Connection stream error: $error');
+      },
+    );
 
     // Device info stream
-    widget.dataSource.deviceInfoStream.listen((info) {
-      setState(() {
-        _deviceInfo = 'Device: VID=${info['vid']}, PID=${info['pid']}';
-      });
-    });
+    widget.dataSource.deviceInfoStream.listen(
+      (info) {
+        if (mounted) {
+          setState(() {
+            _deviceInfo =
+                'Device: VID=${info['vid']}, PID=${info['pid']}${info['hasEndpoints'] == true ? ' (Endpoints: Yes)' : ' (Endpoints: No)'}';
+          });
+        }
+      },
+      onError: (error) {
+        _log('Device info stream error: $error');
+      },
+    );
 
     // Vendor USB specific streams (only for Android)
     if (widget.platformDetector.isAndroid) {
-      widget.dataSource.bulkTransferStream.listen((result) {
-        _logs.add('Bulk Transfer Result: $result');
-        _scrollToBottom(_logScrollController);
-      });
+      widget.dataSource.bulkTransferStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Bulk Transfer Result: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Bulk transfer stream error: $error');
+        },
+      );
 
-      widget.dataSource.interruptTransferStream.listen((result) {
-        _logs.add('Interrupt Transfer Result: $result');
-        _scrollToBottom(_logScrollController);
-      });
+      widget.dataSource.interruptTransferStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Interrupt Transfer Result: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Interrupt transfer stream error: $error');
+        },
+      );
     }
   }
 
@@ -214,18 +280,44 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
   }
 
   Future<void> _scanDevices() async {
-    final devices = await widget.dataSource.getAvailableDevices();
+    try {
+      _log('Scanning for USB devices...');
+      final devices = await widget.dataSource.getAvailableDevices();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (devices.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No USB devices found')),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Found ${devices.length} USB devices')),
-      );
+      if (devices.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No USB devices found'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        _log('No USB devices found');
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Found ${devices.length} USB devices'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        _log('Found ${devices.length} USB devices');
+
+        // Log device details
+        for (final device in devices) {
+          _log('Device: ${device['productName']} (VID: ${device['vendorId']}, PID: ${device['productId']})');
+        }
+      }
+    } catch (e) {
+      _log('Error scanning devices: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error scanning devices: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
