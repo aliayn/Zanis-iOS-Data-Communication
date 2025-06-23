@@ -318,12 +318,14 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             // Disconnect current device if any
             disconnectDevice()
 
+            log("Attempting to connect to device: VID=${device.vendorId}, PID=${device.productId}")
             val connection = usbManager?.openDevice(device)
             if (connection == null) {
-                log("Failed to open device connection")
+                log("Failed to open device connection - device may be in use or permission denied")
                 sendEvent("connection_status", false)
                 return
             }
+            log("Successfully opened device connection")
 
             // Find the first available interface
             val usbInterface = if (device.interfaceCount > 0) device.getInterface(0) else null
@@ -349,12 +351,11 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             // Cache endpoints
             cacheEndpoints(usbInterface)
 
-            // Validate that we have at least one endpoint
+            // Log endpoint information but don't strictly require them for MFi devices
             if (bulkInEndpoint == null && bulkOutEndpoint == null && 
                 interruptInEndpoint == null && interruptOutEndpoint == null) {
-                log("No valid endpoints found on device")
-                disconnectDevice()
-                return
+                log("No standard USB endpoints found - this might be an MFi/accessory device")
+                // Don't disconnect immediately, allow connection for vendor-specific devices
             }
 
             log("Successfully connected to device: ${device.productName ?: "Unknown"}")
@@ -411,22 +412,23 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     private fun startDataReading() {
         readingJob?.cancel()
         
-        // Only start reading if we have a bulk IN endpoint
-        if (bulkInEndpoint == null) {
-            log("No bulk IN endpoint available for reading")
+        // Try to find any IN endpoint for reading
+        val readEndpoint = bulkInEndpoint ?: interruptInEndpoint
+        if (readEndpoint == null) {
+            log("No IN endpoint available for reading - device might use alternative communication methods")
             return
         }
         
         readingJob = coroutineScope.launch {
-            log("Starting data reading loop")
+            log("Starting data reading loop with endpoint: ${readEndpoint.address}")
             var consecutiveErrors = 0
             val maxConsecutiveErrors = 5
             
-            while (isActive && currentConnection != null && bulkInEndpoint != null) {
+            while (isActive && currentConnection != null && readEndpoint != null) {
                 try {
-                    val buffer = ByteArray(bulkInEndpoint!!.maxPacketSize)
+                    val buffer = ByteArray(readEndpoint.maxPacketSize)
                     val bytesRead = currentConnection!!.bulkTransfer(
-                        bulkInEndpoint, buffer, buffer.size, 100 // 100ms timeout
+                        readEndpoint, buffer, buffer.size, 100 // 100ms timeout
                     )
                     
                     if (bytesRead > 0) {
@@ -476,14 +478,21 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     }
 
     private fun sendBulkData(data: ByteArray, result: MethodChannel.Result) {
-        if (currentConnection == null || bulkOutEndpoint == null) {
-            result.error("NOT_CONNECTED", "Device not connected or no bulk OUT endpoint", null)
+        if (currentConnection == null) {
+            result.error("NOT_CONNECTED", "Device not connected", null)
+            return
+        }
+
+        // Try to find any OUT endpoint
+        val writeEndpoint = bulkOutEndpoint ?: interruptOutEndpoint
+        if (writeEndpoint == null) {
+            result.error("NO_ENDPOINT", "No OUT endpoint available for writing", null)
             return
         }
 
         try {
             val bytesWritten = currentConnection!!.bulkTransfer(
-                bulkOutEndpoint, data, data.size, 5000 // 5 second timeout
+                writeEndpoint, data, data.size, 5000 // 5 second timeout
             )
             
             if (bytesWritten >= 0) {

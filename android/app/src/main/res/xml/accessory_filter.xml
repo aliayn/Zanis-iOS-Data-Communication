@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MFi USB Accessory Configuration -->
+    <usb-accessory model="MFi Device" manufacturer="Apple" version="1.0" />
+
+    <!-- Generic USB Accessory -->
+    <usb-accessory model="USB Accessory" manufacturer="Generic" version="1.0" />
+</resources> 
