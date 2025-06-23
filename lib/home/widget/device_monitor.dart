@@ -252,30 +252,27 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
       await widget.dataSource.sendBulkTransfer(Uint8List.fromList(hexValues));
       _sendController.clear();
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Bulk transfer failed: $e')),
-        );
-      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Bulk transfer failed: $e')),
+      );
     }
   }
 
   Future<void> _sendInterruptTransfer() async {
     if (_communicationType != CommunicationType.vendorUsb) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Interrupt transfer only available in Vendor USB mode')),
-        );
-      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Interrupt transfer only available in Vendor USB mode')),
+      );
       return;
     }
 
     if (!_isConnected) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No device connected')),
-        );
-      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No device connected')),
+      );
       return;
     }
 
@@ -287,11 +284,10 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
       await widget.dataSource.sendInterruptTransfer(Uint8List.fromList(hexValues));
       _sendController.clear();
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Interrupt transfer failed: $e')),
-        );
-      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Interrupt transfer failed: $e')),
+      );
     }
   }
 
@@ -308,26 +304,24 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
 
       if (devices.isEmpty) {
         if (mounted) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('No USB devices found'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No USB devices found'),
+              backgroundColor: Colors.orange,
+            ),
+          );
         }
         _log('No USB devices found');
       } else {
         if (mounted) {
-          if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Found ${devices.length} USB devices'),
-                backgroundColor: Colors.blue,
-              ),
-            );
-          }
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Found ${devices.length} USB devices'),
+              backgroundColor: Colors.blue,
+            ),
+          );
         }
         _log('Found ${devices.length} USB devices');
 
@@ -346,14 +340,13 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
     } catch (e) {
       _log('Error scanning devices: $e');
       if (mounted) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
             content: Text('Error scanning devices: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -361,14 +354,13 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
   Future<void> _connectToDevice() async {
     if (_selectedDevice == null) {
       if (mounted) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
             content: Text('Please select a device first'),
             backgroundColor: Colors.orange,
           ),
-          );
-        }
+        );
       }
       return;
     }
