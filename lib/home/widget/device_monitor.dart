@@ -178,8 +178,13 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
     if (type != null && type != _communicationType) {
       setState(() {
         _communicationType = type;
+        // Clear available devices when switching communication types
+        _availableDevices.clear();
+        _selectedDevice = null;
       });
       widget.dataSource.setCommunicationType(type);
+      // Rescan devices with new communication type
+      _scanDevices();
     }
   }
 
@@ -365,6 +370,12 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
       return;
     }
 
+    // Prevent multiple connection attempts
+    if (_isConnecting) {
+      _log('Connection already in progress, ignoring request');
+      return;
+    }
+
     setState(() {
       _isConnecting = true;
     });
@@ -376,13 +387,8 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
 
       if (mounted) {
         if (success) {
-          _log('Successfully connected to device');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Connected to device'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          _log('Successfully initiated connection to device');
+          // Don't show success message here - wait for connection status stream
         } else {
           _log('Failed to connect to device');
           ScaffoldMessenger.of(context).showSnackBar(
@@ -396,12 +402,21 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
     } catch (e) {
       _log('Error connecting to device: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Connection error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (e.toString().contains('CONNECTION_IN_PROGRESS')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Connection already in progress'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Connection error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) {
@@ -442,6 +457,26 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
         );
       }
     }
+  }
+
+  Future<void> _debugConnection() async {
+    _log('=== DEBUG CONNECTION START ===');
+    _log('Platform: ${widget.platformDetector.isAndroid ? "Android" : "iOS"}');
+    _log('Communication Type: $_communicationType');
+    _log('Is Connected: $_isConnected');
+    _log('Is Connecting: $_isConnecting');
+    _log('Available Devices: ${_availableDevices.length}');
+    _log('Selected Device: ${_selectedDevice != null ? _selectedDevice!['productName'] : 'None'}');
+
+    if (_selectedDevice != null) {
+      _log('Selected Device Details:');
+      _log('  VID: 0x${_selectedDevice!['vendorId']?.toRadixString(16).padLeft(4, '0').toUpperCase()}');
+      _log('  PID: 0x${_selectedDevice!['productId']?.toRadixString(16).padLeft(4, '0').toUpperCase()}');
+      _log('  Device ID: ${_selectedDevice!['deviceId']}');
+      _log('  Has Endpoints: ${_selectedDevice!['hasEndpoints']}');
+    }
+
+    _log('=== DEBUG CONNECTION END ===');
   }
 
   Future<void> _checkForBufferedData() async {
@@ -563,6 +598,10 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
                       ElevatedButton(
                         onPressed: _scanDevices,
                         child: const Text('Scan Devices'),
+                      ),
+                      TextButton(
+                        onPressed: _debugConnection,
+                        child: const Text('Debug'),
                       ),
                       if (!_isConnected && !_isConnecting && _selectedDevice != null)
                         ElevatedButton(

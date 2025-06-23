@@ -251,18 +251,23 @@ class DeviceDataSource {
   }
 
   Future<List<dynamic>> getAvailableDevices() async {
-    if (_platformDetector.isIOS) {
-      await _iosDataSource.refreshConnection();
-      return [];
-    } else if (_platformDetector.isAndroid) {
-      switch (_currentCommunicationType) {
-        case CommunicationType.usbSerial:
-          return await _androidDataSource.getAvailableDevices();
-        case CommunicationType.vendorUsb:
-          return await _vendorAndroidDataSource.scanDevices();
+    try {
+      if (_platformDetector.isIOS) {
+        await _iosDataSource.refreshConnection();
+        return [];
+      } else if (_platformDetector.isAndroid) {
+        switch (_currentCommunicationType) {
+          case CommunicationType.usbSerial:
+            return await _androidDataSource.getAvailableDevices();
+          case CommunicationType.vendorUsb:
+            return await _vendorAndroidDataSource.scanDevices();
+        }
+      } else {
+        _log('Unsupported platform');
+        return [];
       }
-    } else {
-      _log('Unsupported platform');
+    } catch (e) {
+      _log('Error getting available devices: $e');
       return [];
     }
   }

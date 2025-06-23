@@ -143,10 +143,8 @@ class VendorAndroidDataSource {
         _log(
             'Vendor USB device attached: ${deviceInfo['productName']} (VID: ${deviceInfo['vendorId']}, PID: ${deviceInfo['productId']})');
 
-        // Auto-request permission and connect if not already connected
-        if (!_isConnected) {
-          _autoConnectDevice(deviceInfo);
-        }
+        // Don't auto-connect, let user manually connect via UI
+        _log('Device detected but not auto-connecting. Use Connect button to manually connect.');
       } catch (e) {
         _log('Error handling device attached event: $e');
       }
@@ -330,7 +328,18 @@ class VendorAndroidDataSource {
     try {
       final result = await _methodChannel.invokeMethod('scanDevices');
       if (result is List) {
-        final devices = result.map((device) => Map<String, dynamic>.from(device)).toList();
+        final devices = <Map<String, dynamic>>[];
+        for (final item in result) {
+          try {
+            if (item is Map) {
+              devices.add(Map<String, dynamic>.from(item));
+            } else {
+              _log('Unexpected device type: ${item.runtimeType}');
+            }
+          } catch (e) {
+            _log('Error processing device item: $e');
+          }
+        }
         _log('Found ${devices.length} vendor USB devices');
         return devices;
       }

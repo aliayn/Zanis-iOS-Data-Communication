@@ -43,6 +43,8 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     private val devicePermissions = ConcurrentHashMap<String, Boolean>()
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var readingJob: Job? = null
+    private var pendingConnectionResult: MethodChannel.Result? = null
+    private var isConnecting = false
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -119,6 +121,13 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                     return
                 }
                 result.success(scanDevices())
+            }
+            "checkAccessories" -> {
+                if (usbManager == null) {
+                    result.error("NOT_INITIALIZED", "USB manager not initialized", null)
+                    return
+                }
+                result.success(checkAccessories())
             }
             "requestPermission" -> {
                 val deviceInfo = call.arguments as? Map<String, Any>
@@ -211,19 +220,55 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     private fun scanDevices(): List<Map<String, Any>> {
         val devices = mutableListOf<Map<String, Any>>()
         try {
-            usbManager?.deviceList?.values?.forEach { device ->
+            val deviceList = usbManager?.deviceList
+            log("Total devices in system: ${deviceList?.size ?: 0}")
+            
+            deviceList?.values?.forEach { device ->
+                log("Found device: VID=${device.vendorId} (0x${device.vendorId.toString(16)}), PID=${device.productId} (0x${device.productId.toString(16)}), Name=${device.productName}")
+                log("Device has permission: ${usbManager?.hasPermission(device)}")
                 devices.add(createDeviceInfo(device))
             }
-            log("Found ${devices.size} USB devices")
+            log("Found ${devices.size} USB devices total")
         } catch (e: Exception) {
             log("Error scanning devices: ${e.message}")
         }
         return devices
     }
 
+    private fun checkAccessories(): List<Map<String, Any>> {
+        val accessories = mutableListOf<Map<String, Any>>()
+        try {
+            val accessoryList = usbManager?.accessoryList
+            log("Total USB accessories in system: ${accessoryList?.size ?: 0}")
+            
+            accessoryList?.forEach { accessory ->
+                log("Found accessory: Manufacturer=${accessory.manufacturer}, Model=${accessory.model}, Version=${accessory.version}")
+                accessories.add(mapOf(
+                    "manufacturer" to (accessory.manufacturer ?: "Unknown"),
+                    "model" to (accessory.model ?: "Unknown"),
+                    "description" to (accessory.description ?: "Unknown"),
+                    "version" to (accessory.version ?: "Unknown"),
+                    "uri" to (accessory.uri ?: "Unknown"),
+                    "serial" to (accessory.serial ?: "Unknown")
+                ))
+            }
+            log("Found ${accessories.size} USB accessories total")
+        } catch (e: Exception) {
+            log("Error checking accessories: ${e.message}")
+        }
+        return accessories
+    }
+
     private fun createDeviceInfo(device: UsbDevice): Map<String, Any> {
         return try {
-            mapOf(
+            val hasEndpoints = try {
+                device.interfaceCount > 0 && device.getInterface(0).endpointCount > 0
+            } catch (e: Exception) {
+                log("Error checking endpoints: ${e.message}")
+                false
+            }
+            
+            val deviceInfo = mapOf(
                 "deviceId" to device.deviceId,
                 "deviceName" to (device.deviceName ?: "Unknown"),
                 "vendorId" to device.vendorId,
@@ -235,11 +280,14 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 "deviceClass" to device.deviceClass,
                 "deviceSubclass" to device.deviceSubclass,
                 "deviceProtocol" to device.deviceProtocol,
-                "hasEndpoints" to (device.interfaceCount > 0 && device.getInterface(0).endpointCount > 0)
+                "hasEndpoints" to hasEndpoints
             )
+            
+            log("Created device info for ${device.productName}: ${deviceInfo}")
+            deviceInfo
         } catch (e: Exception) {
             log("Error creating device info: ${e.message}")
-            mapOf(
+            val fallbackInfo = mapOf(
                 "deviceId" to device.deviceId,
                 "deviceName" to "Unknown",
                 "vendorId" to device.vendorId,
@@ -253,6 +301,8 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 "deviceProtocol" to 0,
                 "hasEndpoints" to false
             )
+            log("Using fallback device info: ${fallbackInfo}")
+            fallbackInfo
         }
     }
 
@@ -264,18 +314,33 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         val deviceId = deviceInfo["deviceId"] as? Int
         val device = usbManager?.deviceList?.values?.find { it.deviceId == deviceId }
         
+        log("Requesting permission for device ID: $deviceId")
+        
         if (device == null) {
+            log("Device not found in USB manager device list")
             result.error("DEVICE_NOT_FOUND", "Device not found", null)
             return
         }
 
         val deviceKey = getDeviceKey(device)
+        log("Device key: $deviceKey")
+        
+        // Check if we already have permission
+        if (usbManager?.hasPermission(device) == true) {
+            log("Device already has permission")
+            devicePermissions[deviceKey] = true
+            result.success(true)
+            return
+        }
+        
         if (devicePermissions[deviceKey] == true) {
+            log("Permission already granted according to our cache")
             result.success(true)
             return
         }
 
         try {
+            log("Requesting USB permission from system...")
             val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
             } else {
@@ -287,6 +352,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 pendingIntentFlags
             )
             usbManager?.requestPermission(device, permissionIntent)
+            log("Permission request sent to system")
             result.success(null) // Permission result will come via broadcast
         } catch (e: Exception) {
             log("Error requesting permission: ${e.message}")
@@ -298,23 +364,53 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         val deviceId = deviceInfo["deviceId"] as? Int
         val device = usbManager?.deviceList?.values?.find { it.deviceId == deviceId }
         
+        log("Connect to device called for device ID: $deviceId")
+        
+        // Prevent multiple connection attempts
+        if (isConnecting) {
+            log("Connection already in progress")
+            result.error("CONNECTION_IN_PROGRESS", "Connection already in progress", null)
+            return
+        }
+        
+        if (currentDevice != null) {
+            log("Already connected to a device, disconnecting first")
+            disconnectDevice()
+        }
+        
         if (device == null) {
+            log("Device not found for connection")
             result.error("DEVICE_NOT_FOUND", "Device not found", null)
             return
         }
 
         val deviceKey = getDeviceKey(device)
+        log("Checking permissions for device: $deviceKey")
+        
+        // Check actual USB manager permission first
+        if (usbManager?.hasPermission(device) != true) {
+            log("Device does not have permission, requesting permission first")
+            requestPermission(deviceInfo, result)
+            return
+        }
+        
         if (devicePermissions[deviceKey] != true) {
+            log("Permission not in cache, requesting permission")
             requestPermission(deviceInfo, result)
             return
         }
 
+        log("Device has permission, proceeding with connection")
+        // Store the result callback to call after actual connection success/failure
+        pendingConnectionResult = result
         connectToDeviceInternal(device)
-        result.success(true)
     }
 
     private fun connectToDeviceInternal(device: UsbDevice) {
         try {
+            // Set connecting state
+            isConnecting = true
+            
             // Disconnect current device if any
             disconnectDevice()
 
@@ -323,6 +419,9 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             if (connection == null) {
                 log("Failed to open device connection - device may be in use or permission denied")
                 sendEvent("connection_status", false)
+                pendingConnectionResult?.error("CONNECTION_FAILED", "Failed to open device connection", null)
+                pendingConnectionResult = null
+                isConnecting = false
                 return
             }
             log("Successfully opened device connection")
@@ -369,10 +468,18 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
             // Start reading data in background
             startDataReading()
+            
+            // Report success to Flutter
+            pendingConnectionResult?.success(true)
+            pendingConnectionResult = null
+            isConnecting = false
 
         } catch (e: Exception) {
             log("Error connecting to device: ${e.message}")
             sendEvent("connection_status", false)
+            pendingConnectionResult?.error("CONNECTION_ERROR", e.message, null)
+            pendingConnectionResult = null
+            isConnecting = false
             // Ensure cleanup on error
             disconnectDevice()
         }
@@ -638,6 +745,10 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             bulkOutEndpoint = null
             interruptInEndpoint = null
             interruptOutEndpoint = null
+            
+            // Clear connection state
+            isConnecting = false
+            pendingConnectionResult = null
 
             sendEvent("connection_status", false)
             log("Device disconnected successfully")
@@ -645,6 +756,8 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         } catch (e: Exception) {
             log("Error during disconnect: ${e.message}")
             sendEvent("connection_status", false)
+            isConnecting = false
+            pendingConnectionResult = null
         }
     }
 
