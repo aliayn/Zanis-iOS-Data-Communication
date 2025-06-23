@@ -276,6 +276,15 @@ class DeviceDataSource {
     }
   }
 
+  Future<bool> disconnectDevice() async {
+    if (_platformDetector.isAndroid && _currentCommunicationType == CommunicationType.vendorUsb) {
+      return await _vendorAndroidDataSource.disconnect();
+    } else {
+      _log('Direct device disconnection only supported for vendor USB on Android');
+      return false;
+    }
+  }
+
   // Public streams
   Stream<DeviceEvent> get eventStream => _eventController.stream;
 

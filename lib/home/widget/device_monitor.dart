@@ -1,9 +1,7 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:zanis_ios_data_communication/data/device_data_source.dart';
-import 'package:zanis_ios_data_communication/data/ios_data_source.dart';
 import 'package:zanis_ios_data_communication/data/platform_detector.dart';
 
 class DeviceMonitor extends StatefulWidget {
@@ -29,17 +27,21 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
   final TextEditingController _sendController = TextEditingController();
 
   bool _isConnected = false;
+  bool _isConnecting = false;
   String _deviceInfo = 'No device connected';
   CommunicationType _communicationType = CommunicationType.usbSerial;
+  List<Map<String, dynamic>> _availableDevices = [];
+  Map<String, dynamic>? _selectedDevice;
 
   @override
   void initState() {
     super.initState();
     _setupStreams();
 
-    // After a brief delay, check for buffered data (iOS only)
+    // After a brief delay, check for buffered data (iOS only) and scan devices
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForBufferedData();
+      _scanDevices(); // Automatically scan for devices on startup
     });
   }
 
@@ -119,7 +121,7 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
         if (mounted) {
           setState(() {
             _deviceInfo =
-                'Device: VID=${info['vid']}, PID=${info['pid']}${info['hasEndpoints'] == true ? ' (Endpoints: Yes)' : ' (Endpoints: No)'}';
+                'Device: VID=${info['vid']}, PID=${info['pid']}${(info['hasEndpoints'] as bool?) == true ? ' (Endpoints: Yes)' : ' (Endpoints: No)'}';
           });
         }
       },
@@ -286,26 +288,41 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
 
       if (!mounted) return;
 
+      setState(() {
+        _availableDevices = devices.map((device) => Map<String, dynamic>.from(device)).toList();
+      });
+
       if (devices.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No USB devices found'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No USB devices found'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
         _log('No USB devices found');
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Found ${devices.length} USB devices'),
-            backgroundColor: Colors.blue,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Found ${devices.length} USB devices'),
+              backgroundColor: Colors.blue,
+            ),
+          );
+        }
         _log('Found ${devices.length} USB devices');
 
-        // Log device details
+        // Log device details and auto-select first device if none selected
         for (final device in devices) {
           _log('Device: ${device['productName']} (VID: ${device['vendorId']}, PID: ${device['productId']})');
+        }
+
+        // Auto-select first device if none selected
+        if (_selectedDevice == null && devices.isNotEmpty) {
+          setState(() {
+            _selectedDevice = Map<String, dynamic>.from(devices.first);
+          });
         }
       }
     } catch (e) {
@@ -321,19 +338,102 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
     }
   }
 
-  Future<void> _checkForBufferedData() async {
-    if (Platform.isIOS) {
-      try {
-        // Get the underlying iOS data source through dependency injection
-        final iosDataSource = IOSDataSource();
+  Future<void> _connectToDevice() async {
+    if (_selectedDevice == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select a device first'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
 
-        // Process any buffered data (especially important when app is launched by device)
-        await iosDataSource.processBufferedData();
-      } catch (e) {
-        _log('Error processing buffered data: $e');
+    setState(() {
+      _isConnecting = true;
+    });
+
+    try {
+      _log('Connecting to device: ${_selectedDevice!['productName']}');
+
+      final success = await widget.dataSource.connectToDevice(_selectedDevice!);
+
+      if (mounted) {
+        if (success) {
+          _log('Successfully connected to device');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Connected to device'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          _log('Failed to connect to device');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to connect to device'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      _log('Error connecting to device: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Connection error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isConnecting = false;
+        });
       }
     }
-    // No buffered data processing needed for Android
+  }
+
+  Future<void> _disconnectDevice() async {
+    try {
+      _log('Disconnecting from device...');
+
+      final success = await widget.dataSource.disconnectDevice();
+
+      if (mounted) {
+        if (success) {
+          _log('Successfully disconnected from device');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Disconnected from device'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else {
+          _log('Disconnect command sent (connection status will update via stream)');
+        }
+      }
+    } catch (e) {
+      _log('Error disconnecting: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Disconnect error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _checkForBufferedData() async {
+    // Buffered data processing is handled automatically by the data source layers
+    // No manual intervention needed for Android or iOS
+    _log('Data source initialization complete');
   }
 
   void _log(String message) {
@@ -415,9 +515,76 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
                   const SizedBox(height: 8),
                   Text(_deviceInfo),
                   const SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: _scanDevices,
-                    child: const Text('Scan for USB Devices'),
+
+                  // Device selection dropdown
+                  if (_availableDevices.isNotEmpty) ...[
+                    Text('Available Devices:', style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: 4),
+                    DropdownButton<Map<String, dynamic>>(
+                      isExpanded: true,
+                      value: _selectedDevice,
+                      hint: const Text('Select a device'),
+                      items: _availableDevices.map((device) {
+                        return DropdownMenuItem<Map<String, dynamic>>(
+                          value: device,
+                          child: Text(
+                            '${device['productName'] ?? 'Unknown'} (VID: 0x${device['vendorId']?.toRadixString(16).padLeft(4, '0').toUpperCase()}, PID: 0x${device['productId']?.toRadixString(16).padLeft(4, '0').toUpperCase()})',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (device) {
+                        setState(() {
+                          _selectedDevice = device;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+
+                  // Action buttons
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ElevatedButton(
+                        onPressed: _scanDevices,
+                        child: const Text('Scan Devices'),
+                      ),
+                      if (!_isConnected && !_isConnecting && _selectedDevice != null)
+                        ElevatedButton(
+                          onPressed: _connectToDevice,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Connect'),
+                        ),
+                      if (_isConnecting)
+                        ElevatedButton(
+                          onPressed: null,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                              SizedBox(width: 8),
+                              Text('Connecting...'),
+                            ],
+                          ),
+                        ),
+                      if (_isConnected)
+                        ElevatedButton(
+                          onPressed: _disconnectDevice,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Disconnect'),
+                        ),
+                    ],
                   ),
                 ],
               ),
