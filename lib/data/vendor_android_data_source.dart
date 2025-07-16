@@ -194,7 +194,7 @@ class VendorAndroidDataSource {
     }
   }
 
-  Future<void> _autoConnectDevice(Map<String, dynamic> deviceInfo) async {
+  Future<void> autoConnectDevice(Map<String, dynamic> deviceInfo) async {
     try {
       _log('Auto-connecting to device: ${deviceInfo['productName']}');
 
@@ -350,6 +350,40 @@ class VendorAndroidDataSource {
     }
   }
 
+  Future<List<Map<String, dynamic>>> scanAccessories() async {
+    try {
+      final result = await _methodChannel.invokeMethod('checkAccessories');
+      if (result is List) {
+        final accessories = <Map<String, dynamic>>[];
+        for (final item in result) {
+          try {
+            if (item is Map) {
+              accessories.add(Map<String, dynamic>.from(item));
+            } else {
+              _log('Unexpected accessory type: ${item.runtimeType}');
+            }
+          } catch (e) {
+            _log('Error processing accessory item: $e');
+          }
+        }
+        _log('Found ${accessories.length} USB accessories');
+        return accessories;
+      }
+      return [];
+    } catch (e) {
+      _log('Error scanning accessories: $e');
+      return [];
+    }
+  }
+
+  bool isMfiDevice(Map<String, dynamic> deviceInfo) {
+    final vendorId = deviceInfo['vendorId'] as int?;
+    final hasEndpoints = deviceInfo['hasEndpoints'] as bool? ?? false;
+
+    // Check for Apple/MFi vendor IDs and lack of endpoints
+    return vendorId == 2753 || vendorId == 0xac1 || !hasEndpoints;
+  }
+
   Future<bool> connectToDevice(Map<String, dynamic> deviceInfo) async {
     try {
       final result = await _methodChannel.invokeMethod('connectToDevice', deviceInfo);
@@ -361,6 +395,34 @@ class VendorAndroidDataSource {
       return false;
     } catch (e) {
       _log('Error connecting to device: $e');
+      // If device connection fails and it's an MFi device, suggest accessory mode
+      if (isMfiDevice(deviceInfo)) {
+        _log('This appears to be an MFi device. Try using accessory mode connection.');
+      }
+      return false;
+    }
+  }
+
+  Future<bool> connectToAccessory(Map<String, dynamic> accessoryInfo) async {
+    try {
+      final result = await _methodChannel.invokeMethod('connectToAccessory', accessoryInfo);
+      if (result == true) {
+        _log('Connected to accessory: ${accessoryInfo['model']}');
+        return true;
+      }
+      return false;
+    } catch (e) {
+      _log('Error connecting to accessory: $e');
+      return false;
+    }
+  }
+
+  Future<bool> requestAccessoryPermission(Map<String, dynamic> accessoryInfo) async {
+    try {
+      final result = await _methodChannel.invokeMethod('requestAccessoryPermission', accessoryInfo);
+      return result == true;
+    } catch (e) {
+      _log('Error requesting accessory permission: $e');
       return false;
     }
   }
