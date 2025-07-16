@@ -1,8 +1,5 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
-import 'package:zanis_ios_data_communication/data/android_data_source.dart';
-import 'package:zanis_ios_data_communication/data/ios_data_source.dart';
 
 enum PlatformType {
   android,
