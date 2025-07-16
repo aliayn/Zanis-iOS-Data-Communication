@@ -128,6 +128,12 @@ class VendorAndroidDataSource {
         final deviceInfo = Map<String, dynamic>.from(payload);
         _currentDevice = deviceInfo;
 
+        // Enhanced logging for debugging
+        final totalEndpoints = deviceInfo['totalEndpoints'] ?? 0;
+        final endpointDetails = deviceInfo['endpointDetails'] ?? '';
+        final deviceClass = deviceInfo['deviceClass'] ?? 0;
+        final isMfi = isMfiDevice(deviceInfo);
+
         _sendEvent(VendorAndroidEvent.fromData(
           type: VendorAndroidEventType.deviceInfo,
           payload: {
@@ -137,11 +143,19 @@ class VendorAndroidDataSource {
             'manufacturerName': deviceInfo['manufacturerName'] ?? 'Unknown',
             'productName': deviceInfo['productName'] ?? 'Unknown',
             'hasEndpoints': deviceInfo['hasEndpoints'] ?? false,
+            'totalEndpoints': totalEndpoints,
+            'endpointDetails': endpointDetails,
+            'deviceClass': deviceClass,
+            'isMfiDevice': isMfi,
           },
         ));
 
         _log(
-            'Vendor USB device attached: ${deviceInfo['productName']} (VID: ${deviceInfo['vendorId']}, PID: ${deviceInfo['productId']})');
+            'Vendor USB device attached: ${deviceInfo['productName']} (VID: 0x${deviceInfo['vendorId']?.toRadixString(16)}, PID: 0x${deviceInfo['productId']?.toRadixString(16)})');
+        _log('Device details: Endpoints=$totalEndpoints, Class=$deviceClass, MFi=$isMfi');
+        if (endpointDetails.isNotEmpty) {
+          _log('Endpoint details: $endpointDetails');
+        }
 
         // Don't auto-connect, let user manually connect via UI
         _log('Device detected but not auto-connecting. Use Connect button to manually connect.');
@@ -379,9 +393,19 @@ class VendorAndroidDataSource {
   bool isMfiDevice(Map<String, dynamic> deviceInfo) {
     final vendorId = deviceInfo['vendorId'] as int?;
     final hasEndpoints = deviceInfo['hasEndpoints'] as bool? ?? false;
+    final deviceClass = deviceInfo['deviceClass'] as int? ?? 0;
+    final productName = deviceInfo['productName'] as String? ?? '';
+    final totalEndpoints = deviceInfo['totalEndpoints'] as int? ?? 0;
 
-    // Check for Apple/MFi vendor IDs and lack of endpoints
-    return vendorId == 2753 || vendorId == 0xac1 || !hasEndpoints;
+    // Use same logic as native plugin - most devices should use USB host mode
+    if (vendorId == 2753 || vendorId == 0xac1) {
+      // Apple vendor IDs
+      // Only consider MFi if no endpoints AND device class 0 AND looks like accessory
+      return totalEndpoints == 0 && deviceClass == 0 && productName.toLowerCase().contains('accessory');
+    }
+
+    // Check for explicit MFi indicators
+    return productName.toLowerCase().contains('mfi') && totalEndpoints == 0;
   }
 
   Future<bool> connectToDevice(Map<String, dynamic> deviceInfo) async {

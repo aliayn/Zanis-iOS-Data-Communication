@@ -351,11 +351,43 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
     private fun createDeviceInfo(device: UsbDevice): Map<String, Any> {
         return try {
-            val hasEndpoints = try {
-                device.interfaceCount > 0 && device.getInterface(0).endpointCount > 0
+            var totalEndpoints = 0
+            var hasEndpoints = false
+            var endpointDetails = mutableListOf<String>()
+            
+            // Properly scan all interfaces and endpoints
+            try {
+                for (i in 0 until device.interfaceCount) {
+                    val usbInterface = device.getInterface(i)
+                    val interfaceEndpoints = usbInterface.endpointCount
+                    totalEndpoints += interfaceEndpoints
+                    
+                    log("Interface $i: ${interfaceEndpoints} endpoints, class=${usbInterface.interfaceClass}")
+                    
+                    // Log endpoint details for debugging
+                    for (j in 0 until interfaceEndpoints) {
+                        val endpoint = usbInterface.getEndpoint(j)
+                        val direction = if (endpoint.direction == UsbConstants.USB_DIR_IN) "IN" else "OUT"
+                        val type = when (endpoint.type) {
+                            UsbConstants.USB_ENDPOINT_XFER_BULK -> "BULK"
+                            UsbConstants.USB_ENDPOINT_XFER_INT -> "INTERRUPT" 
+                            UsbConstants.USB_ENDPOINT_XFER_CONTROL -> "CONTROL"
+                            UsbConstants.USB_ENDPOINT_XFER_ISOC -> "ISOCHRONOUS"
+                            else -> "UNKNOWN"
+                        }
+                        endpointDetails.add("${type}_${direction}(0x${endpoint.address.toString(16)})")
+                    }
+                }
+                hasEndpoints = totalEndpoints > 0
+                
+                if (hasEndpoints) {
+                    log("Device has ${totalEndpoints} total endpoints: ${endpointDetails.joinToString(", ")}")
+                } else {
+                    log("Device has no endpoints - might be an accessory device")
+                }
             } catch (e: Exception) {
-                log("Error checking endpoints: ${e.message}")
-                false
+                log("Error scanning endpoints: ${e.message}")
+                hasEndpoints = false
             }
             
             val deviceInfo = mapOf(
@@ -370,10 +402,12 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 "deviceClass" to device.deviceClass,
                 "deviceSubclass" to device.deviceSubclass,
                 "deviceProtocol" to device.deviceProtocol,
-                "hasEndpoints" to hasEndpoints
+                "hasEndpoints" to hasEndpoints,
+                "totalEndpoints" to totalEndpoints,
+                "endpointDetails" to endpointDetails.joinToString(", ")
             )
             
-            log("Created device info for ${device.productName}: ${deviceInfo}")
+            log("Created device info for ${device.productName}: VID=0x${device.vendorId.toString(16)}, PID=0x${device.productId.toString(16)}, Endpoints=${totalEndpoints}")
             deviceInfo
         } catch (e: Exception) {
             log("Error creating device info: ${e.message}")
@@ -389,7 +423,9 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 "deviceClass" to 0,
                 "deviceSubclass" to 0,
                 "deviceProtocol" to 0,
-                "hasEndpoints" to false
+                "hasEndpoints" to false,
+                "totalEndpoints" to 0,
+                "endpointDetails" to ""
             )
             log("Using fallback device info: ${fallbackInfo}")
             fallbackInfo
@@ -569,18 +605,29 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             disconnectDevice()
             disconnectAccessory() // Also disconnect any accessory
 
-            log("Attempting to connect to device: VID=${device.vendorId}, PID=${device.productId}")
+            log("Attempting USB Host mode connection to device: VID=0x${device.vendorId.toString(16)}, PID=0x${device.productId.toString(16)}")
+            log("Device info: ${device.productName}, Manufacturer: ${device.manufacturerName}")
+            
             val connection = usbManager?.openDevice(device)
             if (connection == null) {
-                log("Failed to open device connection - device may be in use or permission denied")
-                log("This might be an MFi device that requires accessory mode connection")
-                sendEvent("connection_status", false)
-                pendingConnectionResult?.error("CONNECTION_FAILED", "Failed to open device connection - try accessory mode for MFi devices", null)
-                pendingConnectionResult = null
-                isConnecting = false
-                return
+                log("Failed to open USB Host connection - checking if this might be an accessory device")
+                
+                // For devices that might be accessories, try to find matching accessory
+                val accessories = usbManager?.accessoryList
+                if (!accessories.isNullOrEmpty()) {
+                    log("Found ${accessories.size} USB accessories, attempting accessory connection as fallback")
+                    connectToAccessoryInternal(accessories[0])
+                    return
+                } else {
+                    log("No USB accessories found. Connection failed - device may be in use or permission denied")
+                    sendEvent("connection_status", false)
+                    pendingConnectionResult?.error("CONNECTION_FAILED", "Failed to open USB connection. Device may be in use, need different permissions, or require driver installation.", null)
+                    pendingConnectionResult = null
+                    isConnecting = false
+                    return
+                }
             }
-            log("Successfully opened device connection")
+            log("Successfully opened USB Host device connection")
 
             // Find the first available interface
             val usbInterface = if (device.interfaceCount > 0) device.getInterface(0) else null
@@ -607,14 +654,15 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             // Cache endpoints
             cacheEndpoints(usbInterface)
 
-            // Log endpoint information but don't strictly require them for MFi devices
-            if (bulkInEndpoint == null && bulkOutEndpoint == null && 
-                interruptInEndpoint == null && interruptOutEndpoint == null) {
-                log("No standard USB endpoints found - this might be an MFi/accessory device")
-                // Don't disconnect immediately, allow connection for vendor-specific devices
+            // Validate USB Host connection based on endpoints
+            val endpointCount = listOfNotNull(bulkInEndpoint, bulkOutEndpoint, interruptInEndpoint, interruptOutEndpoint).size
+            if (endpointCount == 0) {
+                log("Warning: No standard USB endpoints found. This device may require different drivers or connection method.")
+                log("Device will remain connected but communication may be limited.")
             }
 
-            log("Successfully connected to device: ${device.productName ?: "Unknown"}")
+            log("Successfully connected to USB Host device: ${device.productName ?: "Unknown"}")
+            log("Connection details: InterfaceCount=${device.interfaceCount}, Endpoints=${endpointCount}")
             log("Available endpoints - BulkIn: ${bulkInEndpoint != null}, BulkOut: ${bulkOutEndpoint != null}, InterruptIn: ${interruptInEndpoint != null}, InterruptOut: ${interruptOutEndpoint != null}")
             
             // Only report connected after full validation
@@ -623,8 +671,12 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             // Send device info
             sendEvent("device_attached", createDeviceInfo(device))
 
-            // Start reading data in background
-            startDataReading()
+            // Start reading data in background if we have input endpoints
+            if (bulkInEndpoint != null || interruptInEndpoint != null) {
+                startDataReading()
+            } else {
+                log("No input endpoints available for data reading")
+            }
             
             // Report success to Flutter
             pendingConnectionResult?.success(true)
@@ -1187,12 +1239,23 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     private fun isMfiDevice(deviceInfo: Map<String, Any>): Boolean {
         val vendorId = deviceInfo["vendorId"] as? Int
         val hasEndpoints = deviceInfo["hasEndpoints"] as? Boolean ?: false
+        val deviceClass = deviceInfo["deviceClass"] as? Int ?: 0
+        val productName = deviceInfo["productName"] as? String ?: ""
 
-        return true
-        
-        // MFi devices typically have Apple vendor ID and no standard endpoints
-        return vendorId == APPLE_VENDOR_ID || vendorId == MFI_VENDOR_ID || 
-               (vendorId != null && vendorId == 2753 && !hasEndpoints)
+        // Only treat as MFi device if it matches specific criteria
+        // Most devices should use standard USB host mode
+        return when {
+            // Real MFi devices: Apple vendor ID + no endpoints + specific device class
+            vendorId == APPLE_VENDOR_ID && !hasEndpoints && deviceClass == 0 -> true
+            vendorId == MFI_VENDOR_ID && !hasEndpoints && deviceClass == 0 -> true
+            // Additional check for known MFi device names
+            productName.contains("MFi", ignoreCase = true) && !hasEndpoints -> true
+            // For VID=2753 (0xac1), only consider MFi if explicitly an accessory
+            vendorId == 2753 && !hasEndpoints && deviceClass == 0 && 
+                productName.contains("accessory", ignoreCase = true) -> true
+            // Default to USB host mode for all other devices
+            else -> false
+        }
     }
     
     private fun requestAccessoryPermissionFromDeviceInfo(deviceInfo: Map<String, Any>, result: MethodChannel.Result) {
