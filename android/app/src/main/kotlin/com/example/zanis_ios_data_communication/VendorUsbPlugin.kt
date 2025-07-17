@@ -187,6 +187,13 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 }
                 result.success(checkAccessories())
             }
+            "scanAll" -> {
+                if (usbManager == null) {
+                    result.error("NOT_INITIALIZED", "USB manager not initialized", null)
+                    return
+                }
+                result.success(scanAllDevicesAndAccessories())
+            }
             "requestPermission" -> {
                 val deviceInfo = call.arguments as? Map<String, Any>
                 if (deviceInfo != null) {
@@ -605,23 +612,55 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             disconnectDevice()
             disconnectAccessory() // Also disconnect any accessory
 
-            log("Attempting USB Host mode connection to device: VID=0x${device.vendorId.toString(16)}, PID=0x${device.productId.toString(16)}")
+            log("Attempting connection to device: VID=0x${device.vendorId.toString(16)}, PID=0x${device.productId.toString(16)}")
             log("Device info: ${device.productName}, Manufacturer: ${device.manufacturerName}")
             
-            val connection = usbManager?.openDevice(device)
-            if (connection == null) {
-                log("Failed to open USB Host connection - checking if this might be an accessory device")
-                
-                // For devices that might be accessories, try to find matching accessory
+            // For Apple vendor devices, check accessories first since they're likely AOA hosts
+            if (device.vendorId == APPLE_VENDOR_ID || device.vendorId == MFI_VENDOR_ID) {
+                log("Apple vendor device detected - checking for AOA accessory mode first")
                 val accessories = usbManager?.accessoryList
                 if (!accessories.isNullOrEmpty()) {
-                    log("Found ${accessories.size} USB accessories, attempting accessory connection as fallback")
+                    log("Found ${accessories.size} USB accessories - attempting AOA accessory connection")
                     connectToAccessoryInternal(accessories[0])
                     return
                 } else {
-                    log("No USB accessories found. Connection failed - device may be in use or permission denied")
+                    log("No accessories found, will attempt USB host mode as fallback")
+                }
+            }
+
+            log("Attempting USB Host mode connection...")
+            val connection = usbManager?.openDevice(device)
+            if (connection == null) {
+                log("Failed to open USB Host connection")
+                
+                // For Apple vendor devices, this failure is expected - try accessory mode
+                if (device.vendorId == APPLE_VENDOR_ID || device.vendorId == MFI_VENDOR_ID) {
+                    log("USB Host mode failed for Apple device - this is expected for AOA devices")
+                    log("Checking for AOA accessory mode...")
+                    
+                    val accessories = usbManager?.accessoryList
+                    if (!accessories.isNullOrEmpty()) {
+                        log("Found ${accessories.size} USB accessories, attempting AOA connection")
+                        connectToAccessoryInternal(accessories[0])
+                        return
+                    } else {
+                        log("No USB accessories found. The external device may need to:")
+                        log("1. Initiate AOA protocol negotiation")
+                        log("2. Switch to accessory mode")  
+                        log("3. Provide proper AOA identification strings")
+                        sendEvent("connection_status", false)
+                        pendingConnectionResult?.error("AOA_SETUP_REQUIRED", 
+                            "Device appears to be an AOA accessory but is not properly enumerated. " +
+                            "External device needs to initiate AOA protocol.", null)
+                        pendingConnectionResult = null
+                        isConnecting = false
+                        return
+                    }
+                } else {
+                    log("USB Host connection failed for non-Apple device - device may be in use or need different permissions")
                     sendEvent("connection_status", false)
-                    pendingConnectionResult?.error("CONNECTION_FAILED", "Failed to open USB connection. Device may be in use, need different permissions, or require driver installation.", null)
+                    pendingConnectionResult?.error("CONNECTION_FAILED", 
+                        "Failed to open USB connection. Device may be in use, need different permissions, or require driver installation.", null)
                     pendingConnectionResult = null
                     isConnecting = false
                     return
@@ -1242,17 +1281,24 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         val deviceClass = deviceInfo["deviceClass"] as? Int ?: 0
         val productName = deviceInfo["productName"] as? String ?: ""
 
-        // Only treat as MFi device if it matches specific criteria
-        // Most devices should use standard USB host mode
+        // For Apple vendor ID devices (0xac1/2753), prioritize accessory mode
+        // These devices are typically designed to work as AOA hosts
         return when {
-            // Real MFi devices: Apple vendor ID + no endpoints + specific device class
-            vendorId == APPLE_VENDOR_ID && !hasEndpoints && deviceClass == 0 -> true
-            vendorId == MFI_VENDOR_ID && !hasEndpoints && deviceClass == 0 -> true
+            // Apple vendor IDs - prioritize accessory mode for AOA compatibility
+            vendorId == APPLE_VENDOR_ID || vendorId == MFI_VENDOR_ID -> {
+                log("Detected Apple vendor device (VID=${vendorId}) - will prioritize AOA accessory mode")
+                true
+            }
             // Additional check for known MFi device names
-            productName.contains("MFi", ignoreCase = true) && !hasEndpoints -> true
-            // For VID=2753 (0xac1), only consider MFi if explicitly an accessory
-            vendorId == 2753 && !hasEndpoints && deviceClass == 0 && 
-                productName.contains("accessory", ignoreCase = true) -> true
+            productName.contains("MFi", ignoreCase = true) -> {
+                log("Detected MFi device by name - will use accessory mode")
+                true  
+            }
+            // Devices with accessory in the name
+            productName.contains("accessory", ignoreCase = true) -> {
+                log("Detected accessory device by name - will use accessory mode")
+                true
+            }
             // Default to USB host mode for all other devices
             else -> false
         }
@@ -1286,5 +1332,32 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         val accessory = accessories[0]
         val accessoryInfo = createAccessoryInfo(accessory)
         connectToAccessory(accessoryInfo, result)
+    }
+
+    private fun scanAllDevicesAndAccessories(): List<Map<String, Any>> {
+        val allDevices = mutableListOf<Map<String, Any>>()
+        try {
+            val deviceList = usbManager?.deviceList
+            val accessoryList = usbManager?.accessoryList
+
+            log("Scanning all devices and accessories...")
+
+            deviceList?.values?.forEach { device ->
+                log("Found device: VID=${device.vendorId} (0x${device.vendorId.toString(16)}), PID=${device.productId} (0x${device.productId.toString(16)}), Name=${device.productName}")
+                log("Device has permission: ${usbManager?.hasPermission(device)}")
+                allDevices.add(createDeviceInfo(device))
+            }
+            log("Found ${allDevices.size} USB devices total")
+
+            accessoryList?.forEach { accessory ->
+                log("Found accessory: Manufacturer=${accessory.manufacturer}, Model=${accessory.model}, Version=${accessory.version}")
+                allDevices.add(createAccessoryInfo(accessory))
+            }
+            log("Found ${accessoryList?.size ?: 0} USB accessories total")
+
+        } catch (e: Exception) {
+            log("Error scanning all devices and accessories: ${e.message}")
+        }
+        return allDevices
     }
 } 

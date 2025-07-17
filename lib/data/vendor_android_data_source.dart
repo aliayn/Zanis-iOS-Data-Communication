@@ -255,8 +255,14 @@ class VendorAndroidDataSource {
       _isInitialized = true;
       _log('Native USB initialized');
 
-      // Start scanning for devices
-      await scanDevices();
+      // Start scanning for both devices and accessories
+      await scanAllDevicesAndAccessories();
+
+      // Also scan just accessories to see if any AOA devices are present
+      final accessories = await scanAccessories();
+      if (accessories.isNotEmpty) {
+        _log('Found ${accessories.length} USB accessories that may be AOA devices');
+      }
     } catch (e) {
       _log('Error initializing native USB: $e');
     }
@@ -364,6 +370,33 @@ class VendorAndroidDataSource {
     }
   }
 
+  Future<List<Map<String, dynamic>>> scanAllDevicesAndAccessories() async {
+    try {
+      _log('Scanning for both USB devices and accessories...');
+      final result = await _methodChannel.invokeMethod('scanAll');
+      if (result is List) {
+        final items = <Map<String, dynamic>>[];
+        for (final item in result) {
+          try {
+            if (item is Map) {
+              items.add(Map<String, dynamic>.from(item));
+            } else {
+              _log('Unexpected item type: ${item.runtimeType}');
+            }
+          } catch (e) {
+            _log('Error processing item: $e');
+          }
+        }
+        _log('Found ${items.length} total USB devices and accessories');
+        return items;
+      }
+      return [];
+    } catch (e) {
+      _log('Error scanning all devices and accessories: $e');
+      return [];
+    }
+  }
+
   Future<List<Map<String, dynamic>>> scanAccessories() async {
     try {
       final result = await _methodChannel.invokeMethod('checkAccessories');
@@ -397,15 +430,25 @@ class VendorAndroidDataSource {
     final productName = deviceInfo['productName'] as String? ?? '';
     final totalEndpoints = deviceInfo['totalEndpoints'] as int? ?? 0;
 
-    // Use same logic as native plugin - most devices should use USB host mode
+    // For Apple vendor ID devices (0xac1/2753), prioritize accessory mode
+    // These devices are typically designed to work as AOA hosts
     if (vendorId == 2753 || vendorId == 0xac1) {
-      // Apple vendor IDs
-      // Only consider MFi if no endpoints AND device class 0 AND looks like accessory
-      return totalEndpoints == 0 && deviceClass == 0 && productName.toLowerCase().contains('accessory');
+      _log('Detected Apple vendor device (VID=$vendorId) - will prioritize AOA accessory mode');
+      return true;
     }
 
-    // Check for explicit MFi indicators
-    return productName.toLowerCase().contains('mfi') && totalEndpoints == 0;
+    // Check for explicit MFi/accessory indicators
+    if (productName.toLowerCase().contains('mfi')) {
+      _log('Detected MFi device by name - will use accessory mode');
+      return true;
+    }
+
+    if (productName.toLowerCase().contains('accessory')) {
+      _log('Detected accessory device by name - will use accessory mode');
+      return true;
+    }
+
+    return false;
   }
 
   Future<bool> connectToDevice(Map<String, dynamic> deviceInfo) async {
@@ -419,9 +462,26 @@ class VendorAndroidDataSource {
       return false;
     } catch (e) {
       _log('Error connecting to device: $e');
-      // If device connection fails and it's an MFi device, suggest accessory mode
-      if (isMfiDevice(deviceInfo)) {
-        _log('This appears to be an MFi device. Try using accessory mode connection.');
+
+      // Provide specific guidance for different error types
+      if (e.toString().contains('AOA_SETUP_REQUIRED')) {
+        _log('');
+        _log('=== AOA (Android Open Accessory) Setup Required ===');
+        _log('This Apple vendor device (VID=0xac1) needs to work in AOA mode where:');
+        _log('1. External device acts as USB HOST (provides power)');
+        _log('2. Android device acts as USB ACCESSORY (receives power)');
+        _log('3. External device must initiate AOA protocol negotiation');
+        _log('');
+        _log('Next steps:');
+        _log('1. Ensure external device is providing USB power to Android');
+        _log('2. External device should send AOA identification strings');
+        _log('3. Try scanning for accessories instead of devices');
+        _log('==============================================');
+      } else if (isMfiDevice(deviceInfo)) {
+        _log('This appears to be an AOA/MFi device. Connection may require:');
+        _log('- External device to initiate AOA protocol');
+        _log('- Android device to be in USB accessory mode');
+        _log('- Proper AOA identification by external device');
       }
       return false;
     }
