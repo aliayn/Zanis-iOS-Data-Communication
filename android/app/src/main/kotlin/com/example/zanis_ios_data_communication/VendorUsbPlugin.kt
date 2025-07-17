@@ -202,7 +202,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                         log("Detected MFi device, using accessory permission request")
                         requestAccessoryPermissionFromDeviceInfo(deviceInfo, result)
                     } else {
-                        requestPermission(deviceInfo, result)
+                    requestPermission(deviceInfo, result)
                     }
                 } else {
                     result.error("INVALID_ARGUMENTS", "Device info required", null)
@@ -224,7 +224,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                         log("Detected MFi device, using accessory connection")
                         connectToAccessoryFromDeviceInfo(deviceInfo, result)
                     } else {
-                        connectToDevice(deviceInfo, result)
+                    connectToDevice(deviceInfo, result)
                     }
                 } else {
                     result.error("INVALID_ARGUMENTS", "Device info required", null)
@@ -648,14 +648,14 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                         log("1. Initiate AOA protocol negotiation")
                         log("2. Switch to accessory mode")  
                         log("3. Provide proper AOA identification strings")
-                        sendEvent("connection_status", false)
+                sendEvent("connection_status", false)
                         pendingConnectionResult?.error("AOA_SETUP_REQUIRED", 
                             "Device appears to be an AOA accessory but is not properly enumerated. " +
                             "External device needs to initiate AOA protocol.", null)
                         pendingConnectionResult = null
                         isConnecting = false
-                        return
-                    }
+                return
+            }
                 } else {
                     log("USB Host connection failed for non-Apple device - device may be in use or need different permissions")
                     sendEvent("connection_status", false)
@@ -712,7 +712,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
             // Start reading data in background if we have input endpoints
             if (bulkInEndpoint != null || interruptInEndpoint != null) {
-                startDataReading()
+            startDataReading()
             } else {
                 log("No input endpoints available for data reading")
             }

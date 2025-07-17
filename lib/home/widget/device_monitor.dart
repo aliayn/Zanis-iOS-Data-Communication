@@ -223,9 +223,9 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
       _sendController.clear();
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Invalid hex format: $e')),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Invalid hex format: $e')),
+      );
       }
     }
   }
@@ -233,18 +233,18 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
   Future<void> _sendBulkTransfer() async {
     if (_communicationType != CommunicationType.vendorUsb) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bulk transfer only available in Vendor USB mode')),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bulk transfer only available in Vendor USB mode')),
+      );
       }
       return;
     }
 
     if (!_isConnected) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No device connected')),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No device connected')),
+      );
       }
       return;
     }
@@ -310,23 +310,23 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
       if (devices.isEmpty) {
         if (mounted) {
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No USB devices found'),
-              backgroundColor: Colors.orange,
-            ),
-          );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No USB devices found'),
+            backgroundColor: Colors.orange,
+          ),
+        );
         }
         _log('No USB devices found');
       } else {
         if (mounted) {
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Found ${devices.length} USB devices'),
-              backgroundColor: Colors.blue,
-            ),
-          );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Found ${devices.length} USB devices'),
+            backgroundColor: Colors.blue,
+          ),
+        );
         }
         _log('Found ${devices.length} USB devices');
 
@@ -446,7 +446,7 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
           _log('Disconnect command sent (connection status will update via stream)');
         }
       }
-    } catch (e) {
+      } catch (e) {
       _log('Error disconnecting: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -595,8 +595,8 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
                   Wrap(
                     spacing: 8,
                     children: [
-                      ElevatedButton(
-                        onPressed: _scanDevices,
+                  ElevatedButton(
+                    onPressed: _scanDevices,
                         child: const Text('Scan Devices'),
                       ),
                       TextButton(
