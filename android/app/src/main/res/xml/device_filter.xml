@@ -4,6 +4,10 @@
     <usb-device vendor-id="2753" product-id="1" />
     <!-- VID=0xac1, PID=0x1 in decimal -->
 
+    <!-- New vendor device -->
+    <usb-device vendor-id="13049" product-id="1" />
+    <!-- VID=0x32f9, PID=0x0001 in decimal -->
+
     <!-- USB serial devices -->
     <usb-device vendor-id="6790" product-id="29987" />
     <!-- CH340 0x1A86/0x7523 -->
