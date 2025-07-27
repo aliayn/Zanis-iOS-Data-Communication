@@ -6,9 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.*
-import android.hardware.usb.UsbAccessory
+
 import android.os.Build
-import android.os.ParcelFileDescriptor
+
 import android.util.Log
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -16,8 +16,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
-import java.io.FileInputStream
-import java.io.FileOutputStream
+
 import java.util.concurrent.ConcurrentHashMap
 
 class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
@@ -26,11 +25,6 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         private const val CHANNEL_NAME = "com.zanis.vendor_usb"
         private const val EVENT_CHANNEL_NAME = "com.zanis.vendor_usb/events"
         private const val ACTION_USB_PERMISSION = "com.zanis.vendor_usb.USB_PERMISSION"
-        private const val ACTION_USB_ACCESSORY_PERMISSION = "com.zanis.vendor_usb.USB_ACCESSORY_PERMISSION"
-        
-        // MFi device identification
-        private const val APPLE_VENDOR_ID = 0xac1  // 2753 in decimal
-        private const val MFI_VENDOR_ID = 2753
     }
 
     private lateinit var context: Context
@@ -42,21 +36,14 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     private var currentDevice: UsbDevice? = null
     private var currentConnection: UsbDeviceConnection? = null
     private var currentInterface: UsbInterface? = null
-    
-    // Add accessory support
-    private var currentAccessory: UsbAccessory? = null
-    private var accessoryFileDescriptor: ParcelFileDescriptor? = null
-    private var accessoryInputStream: FileInputStream? = null
-    private var accessoryOutputStream: FileOutputStream? = null
-    
+
     // Endpoint caching
     private var bulkInEndpoint: UsbEndpoint? = null
     private var bulkOutEndpoint: UsbEndpoint? = null
     private var interruptInEndpoint: UsbEndpoint? = null
     private var interruptOutEndpoint: UsbEndpoint? = null
-    
+
     private val devicePermissions = ConcurrentHashMap<String, Boolean>()
-    private val accessoryPermissions = ConcurrentHashMap<String, Boolean>()
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var readingJob: Job? = null
     private var pendingConnectionResult: MethodChannel.Result? = null
@@ -68,9 +55,14 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 when (intent.action) {
                     ACTION_USB_PERMISSION -> {
                         synchronized(this) {
-                            val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                            val device: UsbDevice? =
+                                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                             if (device != null) {
-                                if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                                if (intent.getBooleanExtra(
+                                        UsbManager.EXTRA_PERMISSION_GRANTED,
+                                        false
+                                    )
+                                ) {
                                     devicePermissions[getDeviceKey(device)] = true
                                     log("USB permission granted for device: ${device.productName ?: "Unknown"}")
                                     connectToDeviceInternal(device)
@@ -78,7 +70,11 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                                     devicePermissions[getDeviceKey(device)] = false
                                     log("USB permission denied for device: ${device.productName ?: "Unknown"}")
                                     sendEvent("connection_status", false)
-                                    pendingConnectionResult?.error("PERMISSION_DENIED", "USB permission denied", null)
+                                    pendingConnectionResult?.error(
+                                        "PERMISSION_DENIED",
+                                        "USB permission denied",
+                                        null
+                                    )
                                     pendingConnectionResult = null
                                     isConnecting = false
                                 }
@@ -87,27 +83,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                             }
                         }
                     }
-                    ACTION_USB_ACCESSORY_PERMISSION -> {
-                        synchronized(this) {
-                            val accessory: UsbAccessory? = intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY)
-                            if (accessory != null) {
-                                if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                                    accessoryPermissions[getAccessoryKey(accessory)] = true
-                                    log("USB accessory permission granted for: ${accessory.model ?: "Unknown"}")
-                                    connectToAccessoryInternal(accessory)
-                                } else {
-                                    accessoryPermissions[getAccessoryKey(accessory)] = false
-                                    log("USB accessory permission denied for: ${accessory.model ?: "Unknown"}")
-                                    sendEvent("connection_status", false)
-                                    pendingConnectionResult?.error("PERMISSION_DENIED", "USB accessory permission denied", null)
-                                    pendingConnectionResult = null
-                                    isConnecting = false
-                                }
-                            } else {
-                                log("USB accessory permission intent received with null accessory")
-                            }
-                        }
-                    }
+
                     UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                         val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                         device?.let {
@@ -115,6 +91,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                             sendEvent("device_attached", createDeviceInfo(it))
                         } ?: log("USB device attached but device is null")
                     }
+
                     UsbManager.ACTION_USB_DEVICE_DETACHED -> {
                         val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                         device?.let {
@@ -126,24 +103,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                             sendEvent("device_detached", createDeviceInfo(it))
                         } ?: log("USB device detached but device is null")
                     }
-                    UsbManager.ACTION_USB_ACCESSORY_ATTACHED -> {
-                        val accessory: UsbAccessory? = intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY)
-                        accessory?.let {
-                            log("USB accessory attached: ${it.model ?: "Unknown"}")
-                            sendEvent("accessory_attached", createAccessoryInfo(it))
-                        } ?: log("USB accessory attached but accessory is null")
-                    }
-                    UsbManager.ACTION_USB_ACCESSORY_DETACHED -> {
-                        val accessory: UsbAccessory? = intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY)
-                        accessory?.let {
-                            log("USB accessory detached: ${it.model ?: "Unknown"}")
-                            if (it == currentAccessory) {
-                                log("Current accessory detached, disconnecting...")
-                                disconnectAccessory()
-                            }
-                            sendEvent("accessory_detached", createAccessoryInfo(it))
-                        } ?: log("USB accessory detached but accessory is null")
-                    }
+
                 }
             } catch (e: Exception) {
                 log("Error in USB receiver: ${e.message}")
@@ -156,7 +116,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         context = flutterPluginBinding.applicationContext
         methodChannel = MethodChannel(flutterPluginBinding.binaryMessenger, CHANNEL_NAME)
         methodChannel.setMethodCallHandler(this)
-        
+
         eventChannel = EventChannel(flutterPluginBinding.binaryMessenger, EVENT_CHANNEL_NAME)
         eventChannel.setStreamHandler(this)
     }
@@ -173,6 +133,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 initialize()
                 result.success(true)
             }
+
             "scanDevices" -> {
                 if (usbManager == null) {
                     result.error("NOT_INITIALIZED", "USB manager not initialized", null)
@@ -180,69 +141,31 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 }
                 result.success(scanDevices())
             }
-            "checkAccessories" -> {
-                if (usbManager == null) {
-                    result.error("NOT_INITIALIZED", "USB manager not initialized", null)
-                    return
-                }
-                result.success(checkAccessories())
-            }
-            "scanAll" -> {
-                if (usbManager == null) {
-                    result.error("NOT_INITIALIZED", "USB manager not initialized", null)
-                    return
-                }
-                result.success(scanAllDevicesAndAccessories())
-            }
+
+
             "requestPermission" -> {
                 val deviceInfo = call.arguments as? Map<String, Any>
                 if (deviceInfo != null) {
-                    // Check if this is an MFi device that should use accessory mode
-                    if (isMfiDevice(deviceInfo)) {
-                        log("Detected MFi device, using accessory permission request")
-                        requestAccessoryPermissionFromDeviceInfo(deviceInfo, result)
-                    } else {
                     requestPermission(deviceInfo, result)
-                    }
                 } else {
                     result.error("INVALID_ARGUMENTS", "Device info required", null)
                 }
             }
-            "requestAccessoryPermission" -> {
-                val accessoryInfo = call.arguments as? Map<String, Any>
-                if (accessoryInfo != null) {
-                    requestAccessoryPermission(accessoryInfo, result)
-                } else {
-                    result.error("INVALID_ARGUMENTS", "Accessory info required", null)
-                }
-            }
+
             "connectToDevice" -> {
                 val deviceInfo = call.arguments as? Map<String, Any>
                 if (deviceInfo != null) {
-                    // Check if this is an MFi device that should use accessory mode
-                    if (isMfiDevice(deviceInfo)) {
-                        log("Detected MFi device, using accessory connection")
-                        connectToAccessoryFromDeviceInfo(deviceInfo, result)
-                    } else {
                     connectToDevice(deviceInfo, result)
-                    }
                 } else {
                     result.error("INVALID_ARGUMENTS", "Device info required", null)
                 }
             }
-            "connectToAccessory" -> {
-                val accessoryInfo = call.arguments as? Map<String, Any>
-                if (accessoryInfo != null) {
-                    connectToAccessory(accessoryInfo, result)
-                } else {
-                    result.error("INVALID_ARGUMENTS", "Accessory info required", null)
-                }
-            }
+
             "disconnect" -> {
                 disconnectDevice()
-                disconnectAccessory()
                 result.success(true)
             }
+
             "sendBulkData" -> {
                 val args = call.arguments as? Map<String, Any>
                 val data = args?.get("data") as? ByteArray
@@ -252,6 +175,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                     result.error("INVALID_ARGUMENTS", "Data required", null)
                 }
             }
+
             "bulkTransfer" -> {
                 val args = call.arguments as? Map<String, Any>
                 if (args != null) {
@@ -260,6 +184,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                     result.error("INVALID_ARGUMENTS", "Transfer parameters required", null)
                 }
             }
+
             "interruptTransfer" -> {
                 val args = call.arguments as? Map<String, Any>
                 if (args != null) {
@@ -268,6 +193,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                     result.error("INVALID_ARGUMENTS", "Transfer parameters required", null)
                 }
             }
+
             else -> {
                 result.notImplemented()
             }
@@ -287,15 +213,12 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     private fun initialize() {
         try {
             usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-            
+
             // Register USB broadcast receiver
             val filter = IntentFilter().apply {
                 addAction(ACTION_USB_PERMISSION)
-                addAction(ACTION_USB_ACCESSORY_PERMISSION)
                 addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
                 addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
-                addAction(UsbManager.ACTION_USB_ACCESSORY_ATTACHED)
-                addAction(UsbManager.ACTION_USB_ACCESSORY_DETACHED)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.registerReceiver(usbReceiver, filter, Context.RECEIVER_EXPORTED)
@@ -307,7 +230,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                     ContextCompat.RECEIVER_NOT_EXPORTED
                 )
             }
-            
+
             log("Vendor USB plugin initialized")
         } catch (e: Exception) {
             log("Error initializing USB: ${e.message}")
@@ -319,9 +242,15 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         try {
             val deviceList = usbManager?.deviceList
             log("Total devices in system: ${deviceList?.size ?: 0}")
-            
+
             deviceList?.values?.forEach { device ->
-                log("Found device: VID=${device.vendorId} (0x${device.vendorId.toString(16)}), PID=${device.productId} (0x${device.productId.toString(16)}), Name=${device.productName}")
+                log(
+                    "Found device: VID=${device.vendorId} (0x${device.vendorId.toString(16)}), PID=${device.productId} (0x${
+                        device.productId.toString(
+                            16
+                        )
+                    }), Name=${device.productName}"
+                )
                 log("Device has permission: ${usbManager?.hasPermission(device)}")
                 devices.add(createDeviceInfo(device))
             }
@@ -332,52 +261,30 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         return devices
     }
 
-    private fun checkAccessories(): List<Map<String, Any>> {
-        val accessories = mutableListOf<Map<String, Any>>()
-        try {
-            val accessoryList = usbManager?.accessoryList
-            log("Total USB accessories in system: ${accessoryList?.size ?: 0}")
-            
-            accessoryList?.forEach { accessory ->
-                log("Found accessory: Manufacturer=${accessory.manufacturer}, Model=${accessory.model}, Version=${accessory.version}")
-                accessories.add(mapOf(
-                    "manufacturer" to (accessory.manufacturer ?: "Unknown"),
-                    "model" to (accessory.model ?: "Unknown"),
-                    "description" to (accessory.description ?: "Unknown"),
-                    "version" to (accessory.version ?: "Unknown"),
-                    "uri" to (accessory.uri ?: "Unknown"),
-                    "serial" to (accessory.serial ?: "Unknown")
-                ))
-            }
-            log("Found ${accessories.size} USB accessories total")
-        } catch (e: Exception) {
-            log("Error checking accessories: ${e.message}")
-        }
-        return accessories
-    }
 
     private fun createDeviceInfo(device: UsbDevice): Map<String, Any> {
         return try {
             var totalEndpoints = 0
             var hasEndpoints = false
             var endpointDetails = mutableListOf<String>()
-            
+
             // Properly scan all interfaces and endpoints
             try {
                 for (i in 0 until device.interfaceCount) {
                     val usbInterface = device.getInterface(i)
                     val interfaceEndpoints = usbInterface.endpointCount
                     totalEndpoints += interfaceEndpoints
-                    
+
                     log("Interface $i: ${interfaceEndpoints} endpoints, class=${usbInterface.interfaceClass}")
-                    
+
                     // Log endpoint details for debugging
                     for (j in 0 until interfaceEndpoints) {
                         val endpoint = usbInterface.getEndpoint(j)
-                        val direction = if (endpoint.direction == UsbConstants.USB_DIR_IN) "IN" else "OUT"
+                        val direction =
+                            if (endpoint.direction == UsbConstants.USB_DIR_IN) "IN" else "OUT"
                         val type = when (endpoint.type) {
                             UsbConstants.USB_ENDPOINT_XFER_BULK -> "BULK"
-                            UsbConstants.USB_ENDPOINT_XFER_INT -> "INTERRUPT" 
+                            UsbConstants.USB_ENDPOINT_XFER_INT -> "INTERRUPT"
                             UsbConstants.USB_ENDPOINT_XFER_CONTROL -> "CONTROL"
                             UsbConstants.USB_ENDPOINT_XFER_ISOC -> "ISOCHRONOUS"
                             else -> "UNKNOWN"
@@ -386,9 +293,15 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                     }
                 }
                 hasEndpoints = totalEndpoints > 0
-                
+
                 if (hasEndpoints) {
-                    log("Device has ${totalEndpoints} total endpoints: ${endpointDetails.joinToString(", ")}")
+                    log(
+                        "Device has ${totalEndpoints} total endpoints: ${
+                            endpointDetails.joinToString(
+                                ", "
+                            )
+                        }"
+                    )
                 } else {
                     log("Device has no endpoints - might be an accessory device")
                 }
@@ -396,7 +309,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 log("Error scanning endpoints: ${e.message}")
                 hasEndpoints = false
             }
-            
+
             val deviceInfo = mapOf(
                 "deviceId" to device.deviceId,
                 "deviceName" to (device.deviceName ?: "Unknown"),
@@ -413,8 +326,14 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 "totalEndpoints" to totalEndpoints,
                 "endpointDetails" to endpointDetails.joinToString(", ")
             )
-            
-            log("Created device info for ${device.productName}: VID=0x${device.vendorId.toString(16)}, PID=0x${device.productId.toString(16)}, Endpoints=${totalEndpoints}")
+
+            log(
+                "Created device info for ${device.productName}: VID=0x${device.vendorId.toString(16)}, PID=0x${
+                    device.productId.toString(
+                        16
+                    )
+                }, Endpoints=${totalEndpoints}"
+            )
             deviceInfo
         } catch (e: Exception) {
             log("Error creating device info: ${e.message}")
@@ -439,31 +358,18 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         }
     }
 
-    private fun createAccessoryInfo(accessory: UsbAccessory): Map<String, Any> {
-        return mapOf(
-            "manufacturer" to (accessory.manufacturer ?: "Unknown"),
-            "model" to (accessory.model ?: "Unknown"),
-            "description" to (accessory.description ?: "Unknown"),
-            "version" to (accessory.version ?: "Unknown"),
-            "uri" to (accessory.uri ?: "Unknown"),
-            "serial" to (accessory.serial ?: "Unknown")
-        )
-    }
 
     private fun getDeviceKey(device: UsbDevice): String {
         return "${device.vendorId}:${device.productId}:${device.deviceName}"
     }
 
-    private fun getAccessoryKey(accessory: UsbAccessory): String {
-        return "${accessory.manufacturer}:${accessory.model}:${accessory.serial}"
-    }
 
     private fun requestPermission(deviceInfo: Map<String, Any>, result: MethodChannel.Result) {
         val deviceId = deviceInfo["deviceId"] as? Int
         val device = usbManager?.deviceList?.values?.find { it.deviceId == deviceId }
-        
+
         log("Requesting permission for device ID: $deviceId")
-        
+
         if (device == null) {
             log("Device not found in USB manager device list")
             result.error("DEVICE_NOT_FOUND", "Device not found", null)
@@ -472,7 +378,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
         val deviceKey = getDeviceKey(device)
         log("Device key: $deviceKey")
-        
+
         // Check if we already have permission
         if (usbManager?.hasPermission(device) == true) {
             log("Device already has permission")
@@ -480,7 +386,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             result.success(true)
             return
         }
-        
+
         if (devicePermissions[deviceKey] == true) {
             log("Permission already granted according to our cache")
             result.success(true)
@@ -511,21 +417,21 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     private fun connectToDevice(deviceInfo: Map<String, Any>, result: MethodChannel.Result) {
         val deviceId = deviceInfo["deviceId"] as? Int
         val device = usbManager?.deviceList?.values?.find { it.deviceId == deviceId }
-        
+
         log("Connect to device called for device ID: $deviceId")
-        
+
         // Prevent multiple connection attempts
         if (isConnecting) {
             log("Connection already in progress")
             result.error("CONNECTION_IN_PROGRESS", "Connection already in progress", null)
             return
         }
-        
+
         if (currentDevice != null) {
             log("Already connected to a device, disconnecting first")
             disconnectDevice()
         }
-        
+
         if (device == null) {
             log("Device not found for connection")
             result.error("DEVICE_NOT_FOUND", "Device not found", null)
@@ -534,14 +440,14 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
         val deviceKey = getDeviceKey(device)
         log("Checking permissions for device: $deviceKey")
-        
+
         // Check actual USB manager permission first
         if (usbManager?.hasPermission(device) != true) {
             log("Device does not have permission, requesting permission first")
             requestPermission(deviceInfo, result)
             return
         }
-        
+
         if (devicePermissions[deviceKey] != true) {
             log("Permission not in cache, requesting permission")
             requestPermission(deviceInfo, result)
@@ -554,117 +460,37 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         connectToDeviceInternal(device)
     }
 
-    private fun connectToAccessory(accessoryInfo: Map<String, Any>, result: MethodChannel.Result) {
-        val manufacturer = accessoryInfo["manufacturer"] as? String
-        val model = accessoryInfo["model"] as? String
-        val accessory = usbManager?.accessoryList?.find { 
-            it.manufacturer == manufacturer && it.model == model 
-        }
-        
-        log("Connect to accessory called for: $manufacturer - $model")
-        
-        // Prevent multiple connection attempts
-        if (isConnecting) {
-            log("Connection already in progress")
-            result.error("CONNECTION_IN_PROGRESS", "Connection already in progress", null)
-            return
-        }
-        
-        if (currentAccessory != null) {
-            log("Already connected to an accessory, disconnecting first")
-            disconnectAccessory()
-        }
-        
-        if (accessory == null) {
-            log("Accessory not found for connection")
-            result.error("ACCESSORY_NOT_FOUND", "Accessory not found", null)
-            return
-        }
-
-        val accessoryKey = getAccessoryKey(accessory)
-        log("Checking permissions for accessory: $accessoryKey")
-        
-        // Check actual USB manager permission first
-        if (usbManager?.hasPermission(accessory) != true) {
-            log("Accessory does not have permission, requesting permission first")
-            requestAccessoryPermission(accessoryInfo, result)
-            return
-        }
-        
-        if (accessoryPermissions[accessoryKey] != true) {
-            log("Permission not in cache, requesting permission")
-            requestAccessoryPermission(accessoryInfo, result)
-            return
-        }
-
-        log("Accessory has permission, proceeding with connection")
-        // Store the result callback to call after actual connection success/failure
-        pendingConnectionResult = result
-        connectToAccessoryInternal(accessory)
-    }
 
     private fun connectToDeviceInternal(device: UsbDevice) {
         try {
             // Set connecting state
             isConnecting = true
-            
+
             // Disconnect current device if any
             disconnectDevice()
-            disconnectAccessory() // Also disconnect any accessory
 
-            log("Attempting connection to device: VID=0x${device.vendorId.toString(16)}, PID=0x${device.productId.toString(16)}")
+            log(
+                "Attempting connection to device: VID=0x${device.vendorId.toString(16)}, PID=0x${
+                    device.productId.toString(
+                        16
+                    )
+                }"
+            )
             log("Device info: ${device.productName}, Manufacturer: ${device.manufacturerName}")
-            
-            // For Apple vendor devices, check accessories first since they're likely AOA hosts
-            if (device.vendorId == APPLE_VENDOR_ID || device.vendorId == MFI_VENDOR_ID) {
-                log("Apple vendor device detected - checking for AOA accessory mode first")
-                val accessories = usbManager?.accessoryList
-                if (!accessories.isNullOrEmpty()) {
-                    log("Found ${accessories.size} USB accessories - attempting AOA accessory connection")
-                    connectToAccessoryInternal(accessories[0])
-                    return
-                } else {
-                    log("No accessories found, will attempt USB host mode as fallback")
-                }
-            }
 
             log("Attempting USB Host mode connection...")
             val connection = usbManager?.openDevice(device)
             if (connection == null) {
                 log("Failed to open USB Host connection")
-                
-                // For Apple vendor devices, this failure is expected - try accessory mode
-                if (device.vendorId == APPLE_VENDOR_ID || device.vendorId == MFI_VENDOR_ID) {
-                    log("USB Host mode failed for Apple device - this is expected for AOA devices")
-                    log("Checking for AOA accessory mode...")
-                    
-                    val accessories = usbManager?.accessoryList
-                    if (!accessories.isNullOrEmpty()) {
-                        log("Found ${accessories.size} USB accessories, attempting AOA connection")
-                        connectToAccessoryInternal(accessories[0])
-                        return
-                    } else {
-                        log("No USB accessories found. The external device may need to:")
-                        log("1. Initiate AOA protocol negotiation")
-                        log("2. Switch to accessory mode")  
-                        log("3. Provide proper AOA identification strings")
                 sendEvent("connection_status", false)
-                        pendingConnectionResult?.error("AOA_SETUP_REQUIRED", 
-                            "Device appears to be an AOA accessory but is not properly enumerated. " +
-                            "External device needs to initiate AOA protocol.", null)
-                        pendingConnectionResult = null
-                        isConnecting = false
+                pendingConnectionResult?.error(
+                    "CONNECTION_FAILED",
+                    "Failed to open USB connection. Device may be in use, need different permissions, or require driver installation.",
+                    null
+                )
+                pendingConnectionResult = null
+                isConnecting = false
                 return
-            }
-                } else {
-                    log("USB Host connection failed for non-Apple device - device may be in use or need different permissions")
-                    sendEvent("connection_status", false)
-                    pendingConnectionResult?.error("CONNECTION_FAILED", 
-                        "Failed to open USB connection. Device may be in use, need different permissions, or require driver installation.", null)
-                    pendingConnectionResult = null
-                    isConnecting = false
-                    return
-                }
             }
             log("Successfully opened USB Host device connection")
 
@@ -674,6 +500,9 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 log("No USB interface found")
                 connection.close()
                 sendEvent("connection_status", false)
+                pendingConnectionResult?.error("CONNECTION_FAILED", "No USB interface found", null)
+                pendingConnectionResult = null
+                isConnecting = false
                 return
             }
 
@@ -682,11 +511,17 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 log("Failed to claim USB interface")
                 connection.close()
                 sendEvent("connection_status", false)
+                pendingConnectionResult?.error(
+                    "CONNECTION_FAILED",
+                    "Failed to claim USB interface",
+                    null
+                )
+                pendingConnectionResult = null
+                isConnecting = false
                 return
             }
 
             currentDevice = device
-            currentAccessory = null // Clear accessory as we're using device mode
             currentConnection = connection
             currentInterface = usbInterface
 
@@ -694,7 +529,12 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             cacheEndpoints(usbInterface)
 
             // Validate USB Host connection based on endpoints
-            val endpointCount = listOfNotNull(bulkInEndpoint, bulkOutEndpoint, interruptInEndpoint, interruptOutEndpoint).size
+            val endpointCount = listOfNotNull(
+                bulkInEndpoint,
+                bulkOutEndpoint,
+                interruptInEndpoint,
+                interruptOutEndpoint
+            ).size
             if (endpointCount == 0) {
                 log("Warning: No standard USB endpoints found. This device may require different drivers or connection method.")
                 log("Device will remain connected but communication may be limited.")
@@ -703,20 +543,20 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             log("Successfully connected to USB Host device: ${device.productName ?: "Unknown"}")
             log("Connection details: InterfaceCount=${device.interfaceCount}, Endpoints=${endpointCount}")
             log("Available endpoints - BulkIn: ${bulkInEndpoint != null}, BulkOut: ${bulkOutEndpoint != null}, InterruptIn: ${interruptInEndpoint != null}, InterruptOut: ${interruptOutEndpoint != null}")
-            
+
             // Only report connected after full validation
             sendEvent("connection_status", true)
-            
+
             // Send device info
             sendEvent("device_attached", createDeviceInfo(device))
 
             // Start reading data in background if we have input endpoints
             if (bulkInEndpoint != null || interruptInEndpoint != null) {
-            startDataReading()
+                startDataReading()
             } else {
                 log("No input endpoints available for data reading")
             }
-            
+
             // Report success to Flutter
             pendingConnectionResult?.success(true)
             pendingConnectionResult = null
@@ -733,131 +573,6 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         }
     }
 
-    private fun connectToAccessoryInternal(accessory: UsbAccessory) {
-        try {
-            // Set connecting state
-            isConnecting = true
-            
-            // Disconnect current accessory if any
-            disconnectAccessory()
-
-            log("Attempting to connect to accessory: ${accessory.model ?: "Unknown"}")
-            
-            // Open the accessory connection
-            val fileDescriptor = usbManager?.openAccessory(accessory)
-            if (fileDescriptor == null) {
-                log("Failed to open accessory connection - accessory may be in use or permission denied")
-                sendEvent("connection_status", false)
-                pendingConnectionResult?.error("CONNECTION_FAILED", "Failed to open accessory connection", null)
-                pendingConnectionResult = null
-                isConnecting = false
-                return
-            }
-            log("Successfully opened accessory connection")
-
-            // Store the file descriptor and create streams
-            accessoryFileDescriptor = fileDescriptor
-            accessoryInputStream = FileInputStream(fileDescriptor.fileDescriptor)
-            accessoryOutputStream = FileOutputStream(fileDescriptor.fileDescriptor)
-
-            currentAccessory = accessory
-            currentDevice = null // Clear device as we're using accessory mode
-            currentConnection = null // No direct UsbDeviceConnection for accessory
-            currentInterface = null // No interface for accessory mode
-
-            // Clear endpoints as accessories don't use standard endpoints
-            bulkInEndpoint = null
-            bulkOutEndpoint = null
-            interruptInEndpoint = null
-            interruptOutEndpoint = null
-
-            log("Successfully connected to accessory: ${accessory.model ?: "Unknown"}")
-            log("Accessory connection established - using file descriptor for communication")
-            
-            // Only report connected after full validation
-            sendEvent("connection_status", true)
-            
-            // Send accessory info
-            sendEvent("accessory_attached", createAccessoryInfo(accessory))
-
-            // Start reading data in background for accessory
-            startAccessoryDataReading()
-            
-            // Report success to Flutter
-            pendingConnectionResult?.success(true)
-            pendingConnectionResult = null
-            isConnecting = false
-
-        } catch (e: Exception) {
-            log("Error connecting to accessory: ${e.message}")
-            sendEvent("connection_status", false)
-            pendingConnectionResult?.error("CONNECTION_ERROR", e.message, null)
-            pendingConnectionResult = null
-            isConnecting = false
-            // Ensure cleanup on error
-            disconnectAccessory()
-        }
-    }
-    
-    private fun startAccessoryDataReading() {
-        readingJob?.cancel()
-        
-        if (accessoryInputStream == null) {
-            log("No accessory input stream available for reading")
-            return
-        }
-        
-        readingJob = coroutineScope.launch {
-            log("Starting accessory data reading loop")
-            var consecutiveErrors = 0
-            val maxConsecutiveErrors = 5
-            
-            while (isActive && currentAccessory != null && accessoryInputStream != null) {
-                try {
-                    val buffer = ByteArray(1024) // Standard buffer size for accessory communication
-                    val bytesRead = accessoryInputStream!!.read(buffer)
-                    
-                    if (bytesRead > 0) {
-                        consecutiveErrors = 0 // Reset error counter on successful read
-                        val data = buffer.sliceArray(0 until bytesRead)
-                        
-                        try {
-                            // Try to convert to string, fallback to hex if not UTF-8
-                            val dataString = String(data, Charsets.UTF_8)
-                            sendEvent("data_received", dataString)
-                            log("Received accessory data: $dataString (${bytesRead} bytes)")
-                        } catch (charException: Exception) {
-                            // If not valid UTF-8, send as hex string
-                            val hexString = data.joinToString(" ") { 
-                                "0x${it.toUByte().toString(16).padStart(2, '0')}" 
-                            }
-                            sendEvent("data_received", hexString)
-                            log("Received accessory binary data: $hexString (${bytesRead} bytes)")
-                        }
-                    } else if (bytesRead < 0) {
-                        // Stream closed or error
-                        log("Accessory stream closed or error occurred")
-                        break
-                    }
-                    // bytesRead == 0 means no data available, continue reading
-                    
-                } catch (e: Exception) {
-                    consecutiveErrors++
-                    if (isActive) {
-                        log("Error reading accessory data: ${e.message} (consecutive errors: $consecutiveErrors)")
-                        if (consecutiveErrors >= maxConsecutiveErrors) {
-                            log("Too many consecutive errors, stopping accessory data reading")
-                            // Disconnect the accessory as it might be in a bad state
-                            disconnectAccessory()
-                            break
-                        }
-                    }
-                    delay(200) // Longer delay on error
-                }
-            }
-            log("Accessory data reading loop stopped")
-        }
-    }
 
     private fun cacheEndpoints(usbInterface: UsbInterface) {
         bulkInEndpoint = null
@@ -877,6 +592,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                         log("Found bulk OUT endpoint: ${endpoint.address}")
                     }
                 }
+
                 UsbConstants.USB_ENDPOINT_XFER_INT -> {
                     if (endpoint.direction == UsbConstants.USB_DIR_IN) {
                         interruptInEndpoint = endpoint
@@ -892,30 +608,30 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
     private fun startDataReading() {
         readingJob?.cancel()
-        
+
         // Try to find any IN endpoint for reading
         val readEndpoint = bulkInEndpoint ?: interruptInEndpoint
         if (readEndpoint == null) {
             log("No IN endpoint available for reading - device might use alternative communication methods")
             return
         }
-        
+
         readingJob = coroutineScope.launch {
             log("Starting data reading loop with endpoint: ${readEndpoint.address}")
             var consecutiveErrors = 0
             val maxConsecutiveErrors = 5
-            
+
             while (isActive && currentConnection != null && readEndpoint != null) {
                 try {
                     val buffer = ByteArray(readEndpoint.maxPacketSize)
                     val bytesRead = currentConnection!!.bulkTransfer(
                         readEndpoint, buffer, buffer.size, 100 // 100ms timeout
                     )
-                    
+
                     if (bytesRead > 0) {
                         consecutiveErrors = 0 // Reset error counter on successful read
                         val data = buffer.sliceArray(0 until bytesRead)
-                        
+
                         try {
                             // Try to convert to string, fallback to hex if not UTF-8
                             val dataString = String(data, Charsets.UTF_8)
@@ -923,8 +639,8 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                             log("Received data: $dataString (${bytesRead} bytes)")
                         } catch (charException: Exception) {
                             // If not valid UTF-8, send as hex string
-                            val hexString = data.joinToString(" ") { 
-                                "0x${it.toUByte().toString(16).padStart(2, '0')}" 
+                            val hexString = data.joinToString(" ") {
+                                "0x${it.toUByte().toString(16).padStart(2, '0')}"
                             }
                             sendEvent("data_received", hexString)
                             log("Received binary data: $hexString (${bytesRead} bytes)")
@@ -939,7 +655,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                         delay(200) // Longer delay on transfer error
                     }
                     // bytesRead == 0 means timeout, which is normal
-                    
+
                 } catch (e: Exception) {
                     consecutiveErrors++
                     if (isActive) {
@@ -959,22 +675,6 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     }
 
     private fun sendBulkData(data: ByteArray, result: MethodChannel.Result) {
-        // Check if we're connected via accessory mode
-        if (currentAccessory != null && accessoryOutputStream != null) {
-            try {
-                accessoryOutputStream!!.write(data)
-                accessoryOutputStream!!.flush()
-                log("Accessory data sent successfully: ${data.size} bytes")
-                result.success(data.size)
-                return
-            } catch (e: Exception) {
-                log("Error sending accessory data: ${e.message}")
-                result.error("TRANSFER_ERROR", e.message, null)
-                return
-            }
-        }
-        
-        // Fall back to standard USB device connection
         if (currentConnection == null) {
             result.error("NOT_CONNECTED", "Device not connected", null)
             return
@@ -991,7 +691,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             val bytesWritten = currentConnection!!.bulkTransfer(
                 writeEndpoint, data, data.size, 5000 // 5 second timeout
             )
-            
+
             if (bytesWritten >= 0) {
                 log("Bulk data sent successfully: $bytesWritten bytes")
                 result.success(bytesWritten)
@@ -1036,11 +736,13 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             )
 
             if (bytesTransferred >= 0) {
-                sendEvent("bulk_transfer_result", mapOf(
-                    "endpoint" to endpoint,
-                    "bytesTransferred" to bytesTransferred,
-                    "success" to true
-                ))
+                sendEvent(
+                    "bulk_transfer_result", mapOf(
+                        "endpoint" to endpoint,
+                        "bytesTransferred" to bytesTransferred,
+                        "success" to true
+                    )
+                )
                 result.success(true)
             } else {
                 result.error("TRANSFER_FAILED", "Bulk transfer failed", null)
@@ -1083,11 +785,13 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             )
 
             if (bytesTransferred >= 0) {
-                sendEvent("interrupt_transfer_result", mapOf(
-                    "endpoint" to endpoint,
-                    "bytesTransferred" to bytesTransferred,
-                    "success" to true
-                ))
+                sendEvent(
+                    "interrupt_transfer_result", mapOf(
+                        "endpoint" to endpoint,
+                        "bytesTransferred" to bytesTransferred,
+                        "success" to true
+                    )
+                )
                 result.success(true)
             } else {
                 result.error("TRANSFER_FAILED", "Interrupt transfer failed", null)
@@ -1101,7 +805,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     private fun disconnectDevice() {
         try {
             log("Disconnecting device...")
-            
+
             // Cancel reading job first
             readingJob?.cancel()
             readingJob = null
@@ -1125,24 +829,24 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                     log("Error closing connection: ${e.message}")
                 }
             }
-            
+
             // Clear all references
             currentDevice = null
             currentConnection = null
             currentInterface = null
-            
+
             bulkInEndpoint = null
             bulkOutEndpoint = null
             interruptInEndpoint = null
             interruptOutEndpoint = null
-            
+
             // Clear connection state
             isConnecting = false
             pendingConnectionResult = null
 
             sendEvent("connection_status", false)
             log("Device disconnected successfully")
-            
+
         } catch (e: Exception) {
             log("Error during disconnect: ${e.message}")
             sendEvent("connection_status", false)
@@ -1151,109 +855,15 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         }
     }
 
-    private fun disconnectAccessory() {
-        try {
-            log("Disconnecting accessory...")
-            
-            // Cancel reading job first
-            readingJob?.cancel()
-            readingJob = null
-
-            // Close input and output streams
-            accessoryInputStream?.close()
-            accessoryOutputStream?.close()
-            accessoryInputStream = null
-            accessoryOutputStream = null
-
-            // Close file descriptor
-            accessoryFileDescriptor?.close()
-            accessoryFileDescriptor = null
-            
-            // Clear all references
-            currentAccessory = null
-            currentDevice = null // Clear device reference too
-            currentConnection = null
-            currentInterface = null
-            
-            bulkInEndpoint = null
-            bulkOutEndpoint = null
-            interruptInEndpoint = null
-            interruptOutEndpoint = null
-            
-            // Clear connection state
-            isConnecting = false
-            pendingConnectionResult = null
-
-            sendEvent("connection_status", false)
-            log("Accessory disconnected successfully")
-            
-        } catch (e: Exception) {
-            log("Error during accessory disconnect: ${e.message}")
-            sendEvent("connection_status", false)
-            isConnecting = false
-            pendingConnectionResult = null
-        }
-    }
-
-    private fun requestAccessoryPermission(accessoryInfo: Map<String, Any>, result: MethodChannel.Result) {
-        val manufacturer = accessoryInfo["manufacturer"] as? String
-        val model = accessoryInfo["model"] as? String
-        val accessory = usbManager?.accessoryList?.find { 
-            it.manufacturer == manufacturer && it.model == model 
-        }
-        
-        log("Requesting accessory permission for: $manufacturer - $model")
-        
-        if (accessory == null) {
-            log("Accessory not found in USB manager accessory list")
-            result.error("ACCESSORY_NOT_FOUND", "Accessory not found", null)
-            return
-        }
-
-        val accessoryKey = getAccessoryKey(accessory)
-        log("Accessory key: $accessoryKey")
-        
-        // Check if we already have permission
-        if (usbManager?.hasPermission(accessory) == true) {
-            log("Accessory already has permission")
-            accessoryPermissions[accessoryKey] = true
-            result.success(true)
-            return
-        }
-        
-        if (accessoryPermissions[accessoryKey] == true) {
-            log("Permission already granted according to our cache")
-            result.success(true)
-            return
-        }
-
-        try {
-            log("Requesting USB accessory permission from system...")
-            val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
-
-            val permissionIntent = PendingIntent.getBroadcast(
-                context, 0, Intent(ACTION_USB_ACCESSORY_PERMISSION),
-                pendingIntentFlags
-            )
-            usbManager?.requestPermission(accessory, permissionIntent)
-            log("Permission request sent to system")
-            result.success(null) // Permission result will come via broadcast
-        } catch (e: Exception) {
-            log("Error requesting accessory permission: ${e.message}")
-            result.error("PERMISSION_ERROR", e.message, null)
-        }
-    }
 
     private fun sendEvent(type: String, payload: Any?) {
-        eventSink?.success(mapOf(
-            "type" to type,
-            "payload" to payload,
-            "timestamp" to System.currentTimeMillis() / 1000.0
-        ))
+        eventSink?.success(
+            mapOf(
+                "type" to type,
+                "payload" to payload,
+                "timestamp" to System.currentTimeMillis() / 1000.0
+            )
+        )
     }
 
     private fun log(message: String) {
@@ -1267,97 +877,10 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         } catch (e: Exception) {
             Log.e(TAG, "Error unregistering receiver: ${e.message}")
         }
-        
+
         coroutineScope.cancel()
         disconnectDevice()
-        disconnectAccessory() // Ensure accessory is also disconnected
         devicePermissions.clear()
-        accessoryPermissions.clear()
     }
 
-    private fun isMfiDevice(deviceInfo: Map<String, Any>): Boolean {
-        val vendorId = deviceInfo["vendorId"] as? Int
-        val hasEndpoints = deviceInfo["hasEndpoints"] as? Boolean ?: false
-        val deviceClass = deviceInfo["deviceClass"] as? Int ?: 0
-        val productName = deviceInfo["productName"] as? String ?: ""
-
-        // For Apple vendor ID devices (0xac1/2753), prioritize accessory mode
-        // These devices are typically designed to work as AOA hosts
-        return when {
-            // Apple vendor IDs - prioritize accessory mode for AOA compatibility
-            vendorId == APPLE_VENDOR_ID || vendorId == MFI_VENDOR_ID -> {
-                log("Detected Apple vendor device (VID=${vendorId}) - will prioritize AOA accessory mode")
-                true
-            }
-            // Additional check for known MFi device names
-            productName.contains("MFi", ignoreCase = true) -> {
-                log("Detected MFi device by name - will use accessory mode")
-                true  
-            }
-            // Devices with accessory in the name
-            productName.contains("accessory", ignoreCase = true) -> {
-                log("Detected accessory device by name - will use accessory mode")
-                true
-            }
-            // Default to USB host mode for all other devices
-            else -> false
-        }
-    }
-    
-    private fun requestAccessoryPermissionFromDeviceInfo(deviceInfo: Map<String, Any>, result: MethodChannel.Result) {
-        // For MFi devices detected in device scan, we need to check if there's a corresponding accessory
-        val accessories = usbManager?.accessoryList
-        if (accessories.isNullOrEmpty()) {
-            log("No accessories found for MFi device")
-            result.error("NO_ACCESSORY_FOUND", "No USB accessories found for this MFi device", null)
-            return
-        }
-        
-        // Use the first available accessory (MFi devices typically only have one)
-        val accessory = accessories[0]
-        val accessoryInfo = createAccessoryInfo(accessory)
-        requestAccessoryPermission(accessoryInfo, result)
-    }
-    
-    private fun connectToAccessoryFromDeviceInfo(deviceInfo: Map<String, Any>, result: MethodChannel.Result) {
-        // For MFi devices detected in device scan, we need to check if there's a corresponding accessory
-        val accessories = usbManager?.accessoryList
-        if (accessories.isNullOrEmpty()) {
-            log("No accessories found for MFi device")
-            result.error("NO_ACCESSORY_FOUND", "No USB accessories found for this MFi device", null)
-            return
-        }
-        
-        // Use the first available accessory (MFi devices typically only have one)
-        val accessory = accessories[0]
-        val accessoryInfo = createAccessoryInfo(accessory)
-        connectToAccessory(accessoryInfo, result)
-    }
-
-    private fun scanAllDevicesAndAccessories(): List<Map<String, Any>> {
-        val allDevices = mutableListOf<Map<String, Any>>()
-        try {
-            val deviceList = usbManager?.deviceList
-            val accessoryList = usbManager?.accessoryList
-
-            log("Scanning all devices and accessories...")
-
-            deviceList?.values?.forEach { device ->
-                log("Found device: VID=${device.vendorId} (0x${device.vendorId.toString(16)}), PID=${device.productId} (0x${device.productId.toString(16)}), Name=${device.productName}")
-                log("Device has permission: ${usbManager?.hasPermission(device)}")
-                allDevices.add(createDeviceInfo(device))
-            }
-            log("Found ${allDevices.size} USB devices total")
-
-            accessoryList?.forEach { accessory ->
-                log("Found accessory: Manufacturer=${accessory.manufacturer}, Model=${accessory.model}, Version=${accessory.version}")
-                allDevices.add(createAccessoryInfo(accessory))
-            }
-            log("Found ${accessoryList?.size ?: 0} USB accessories total")
-
-        } catch (e: Exception) {
-            log("Error scanning all devices and accessories: ${e.message}")
-        }
-        return allDevices
-    }
 } 
