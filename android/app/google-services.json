@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "109480751945",
+    "project_id": "zanis-comminucation",
+    "storage_bucket": "zanis-comminucation.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:109480751945:android:47fbd4e9996594447be098",
+        "android_client_info": {
+          "package_name": "com.zanis.tcp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCo2d-z6NWWHhQ7KUP2YBC7-J2ihtvNZyI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

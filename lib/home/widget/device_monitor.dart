@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:zanis_ios_data_communication/data/device_data_source.dart';
 import 'package:zanis_ios_data_communication/data/platform_detector.dart';
+import 'package:zanis_ios_data_communication/utils/crash_test_utility.dart';
 
 class DeviceMonitor extends StatefulWidget {
   final DeviceDataSource dataSource;
@@ -223,9 +224,9 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
       _sendController.clear();
     } catch (e) {
       if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Invalid hex format: $e')),
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Invalid hex format: $e')),
+        );
       }
     }
   }
@@ -233,18 +234,18 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
   Future<void> _sendBulkTransfer() async {
     if (_communicationType != CommunicationType.vendorUsb) {
       if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bulk transfer only available in Vendor USB mode')),
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Bulk transfer only available in Vendor USB mode')),
+        );
       }
       return;
     }
 
     if (!_isConnected) {
       if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No device connected')),
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No device connected')),
+        );
       }
       return;
     }
@@ -310,23 +311,23 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
       if (devices.isEmpty) {
         if (mounted) {
           if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No USB devices found'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No USB devices found'),
+              backgroundColor: Colors.orange,
+            ),
+          );
         }
         _log('No USB devices found');
       } else {
         if (mounted) {
           if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Found ${devices.length} USB devices'),
-            backgroundColor: Colors.blue,
-          ),
-        );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Found ${devices.length} USB devices'),
+              backgroundColor: Colors.blue,
+            ),
+          );
         }
         _log('Found ${devices.length} USB devices');
 
@@ -446,7 +447,7 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
           _log('Disconnect command sent (connection status will update via stream)');
         }
       }
-      } catch (e) {
+    } catch (e) {
       _log('Error disconnecting: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -595,8 +596,8 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
                   Wrap(
                     spacing: 8,
                     children: [
-                  ElevatedButton(
-                    onPressed: _scanDevices,
+                      ElevatedButton(
+                        onPressed: _scanDevices,
                         child: const Text('Scan Devices'),
                       ),
                       TextButton(
@@ -747,6 +748,224 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
                         ),
                       ],
                     ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Crash Testing Section (for Firebase Crashlytics testing)
+          Card(
+            margin: const EdgeInsets.all(8.0),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.bug_report, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Firebase Crashlytics Testing',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Test Firebase Crashlytics integration with various crash scenarios.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Non-Fatal Error Tests
+                  Text(
+                    'Non-Fatal Tests:',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: Colors.orange,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          try {
+                            CrashTestUtility.testNonFatalError();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Non-fatal error sent to Crashlytics'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          } catch (e) {
+                            debugPrint('Error in non-fatal test: $e');
+                          }
+                        },
+                        icon: const Icon(Icons.warning, size: 16),
+                        label: const Text('Non-Fatal'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Fatal Crash Tests
+                  Text(
+                    'Fatal Crash Tests:',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: Colors.red,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '⚠️ These will crash the app immediately!',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.red,
+                          fontStyle: FontStyle.italic,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () => CrashTestUtility.testBasicCrash(),
+                        icon: const Icon(Icons.error, size: 16),
+                        label: const Text('Basic'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => CrashTestUtility.testNullPointerCrash(),
+                        icon: const Icon(Icons.error_outline, size: 16),
+                        label: const Text('Null Pointer'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => CrashTestUtility.testListIndexOutOfBounds(),
+                        icon: const Icon(Icons.list, size: 16),
+                        label: const Text('Index Error'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => CrashTestUtility.testDivisionByZero(),
+                        icon: const Icon(Icons.calculate, size: 16),
+                        label: const Text('Division by 0'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => CrashTestUtility.testCustomError(),
+                        icon: const Icon(Icons.settings, size: 16),
+                        label: const Text('Custom'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => CrashTestUtility.testAsyncCrash(),
+                        icon: const Icon(Icons.timer, size: 16),
+                        label: const Text('Async'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => CrashTestUtility.testFlutterError(),
+                        icon: const Icon(Icons.flutter_dash, size: 16),
+                        label: const Text('Flutter Error'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => CrashTestUtility.testCustomLog(),
+                        icon: const Icon(Icons.description, size: 16),
+                        label: const Text('With Custom Data'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepPurple,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Extreme Tests
+                  ExpansionTile(
+                    title: Text(
+                      'Extreme Tests',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: Colors.deepOrange,
+                          ),
+                    ),
+                    subtitle: const Text('⚠️ These may severely impact device performance'),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: () => CrashTestUtility.testStackOverflow(),
+                              icon: const Icon(Icons.layers, size: 16),
+                              label: const Text('Stack Overflow'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.deepOrange,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed: () => CrashTestUtility.testMemoryLeak(),
+                              icon: const Icon(Icons.memory, size: 16),
+                              label: const Text('Memory Stress'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.deepOrange,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

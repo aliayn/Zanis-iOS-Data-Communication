@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:zanis_ios_data_communication/service/app_service.dart';
@@ -83,7 +84,7 @@ class ErrorHandler with AppLogger {
       runApp(app);
     }, ((error, stack) {
       //add firebase crashlytics
-      //FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
       log.e(error);
     }));
 
@@ -97,7 +98,7 @@ class ErrorHandler with AppLogger {
   void _handleFlutterError(FlutterErrorDetails details) {
     if (kReleaseMode) {
       //add firebase crashlytics
-      //FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+      FirebaseCrashlytics.instance.recordFlutterFatalError(details);
       log.e(details.exception);
       Zone.current.handleUncaughtError(details.exception, details.stack!);
     } else {

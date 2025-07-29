@@ -21,6 +21,8 @@ dependencies:
   injectable: ^2.3.2
   logger: ^2.5.0
   usb_serial: ^0.5.2
+  firebase_crashlytics: ^5.0.0
+  firebase_core: ^4.0.0
 
 dev_dependencies:
   flutter_test:

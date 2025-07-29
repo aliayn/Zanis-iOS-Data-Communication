@@ -1,0 +1,30 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "zanis-comminucation",
+          "appId": "1:109480751945:android:47fbd4e9996594447be098",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "zanis-comminucation",
+          "appId": "1:109480751945:ios:eaf211d61ff749837be098",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "zanis-comminucation",
+          "configurations": {
+            "android": "1:109480751945:android:47fbd4e9996594447be098",
+            "ios": "1:109480751945:ios:eaf211d61ff749837be098"
+          }
+        }
+      }
+    }
+  }
+}
