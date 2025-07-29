@@ -16,6 +16,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
 
 import java.util.concurrent.ConcurrentHashMap
 
@@ -857,13 +858,16 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
 
     private fun sendEvent(type: String, payload: Any?) {
-        eventSink?.success(
-            mapOf(
-                "type" to type,
-                "payload" to payload,
-                "timestamp" to System.currentTimeMillis() / 1000.0
+        // Always dispatch to main thread to ensure Flutter method channels are called correctly
+        coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            eventSink?.success(
+                mapOf(
+                    "type" to type,
+                    "payload" to payload,
+                    "timestamp" to System.currentTimeMillis() / 1000.0
+                )
             )
-        )
+        }
     }
 
     private fun log(message: String) {
