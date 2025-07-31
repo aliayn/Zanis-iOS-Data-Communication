@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:zanis_ios_data_communication/data/device_data_source.dart';
 import 'package:zanis_ios_data_communication/data/platform_detector.dart';
 import 'package:zanis_ios_data_communication/utils/crash_test_utility.dart';
+import 'dart:async';
 
 class DeviceMonitor extends StatefulWidget {
   final DeviceDataSource dataSource;
@@ -33,6 +34,7 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
   CommunicationType _communicationType = CommunicationType.usbSerial;
   List<Map<String, dynamic>> _availableDevices = [];
   Map<String, dynamic>? _selectedDevice;
+  Timer? _connectionStateTimer;
 
   @override
   void initState() {
@@ -43,6 +45,18 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForBufferedData();
       _scanDevices(); // Automatically scan for devices on startup
+      _syncConnectionState(); // Sync connection state from native side
+
+      // Set up periodic connection state sync (every 2 seconds)
+      _connectionStateTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+        if (mounted && widget.platformDetector.isAndroid && _communicationType == CommunicationType.vendorUsb) {
+          _syncConnectionState();
+        } else {
+          // Cancel timer if not in vendor USB mode
+          timer.cancel();
+          _connectionStateTimer = null;
+        }
+      });
     });
   }
 
@@ -160,6 +174,49 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
           _log('Interrupt transfer stream error: $error');
         },
       );
+
+      // Initial data streams (only for Android Vendor USB)
+      widget.dataSource.initResponseSentStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Init Response Sent: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Init response sent stream error: $error');
+        },
+      );
+
+      widget.dataSource.initResponseFailedStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Init Response Failed: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Init response failed stream error: $error');
+        },
+      );
+
+      widget.dataSource.initResponseErrorStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Init Response Error: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Init response error stream error: $error');
+        },
+      );
     }
   }
 
@@ -177,6 +234,10 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
 
   void _switchCommunicationType(CommunicationType? type) {
     if (type != null && type != _communicationType) {
+      // Cancel existing timer
+      _connectionStateTimer?.cancel();
+      _connectionStateTimer = null;
+
       setState(() {
         _communicationType = type;
         // Clear available devices when switching communication types
@@ -186,6 +247,35 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
       widget.dataSource.setCommunicationType(type);
       // Rescan devices with new communication type
       _scanDevices();
+      // Sync connection state from native side
+      _syncConnectionState();
+
+      // Restart timer if switching to vendor USB mode
+      if (type == CommunicationType.vendorUsb && widget.platformDetector.isAndroid) {
+        _connectionStateTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+          if (mounted && widget.platformDetector.isAndroid && _communicationType == CommunicationType.vendorUsb) {
+            _syncConnectionState();
+          } else {
+            // Cancel timer if not in vendor USB mode
+            timer.cancel();
+            _connectionStateTimer = null;
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _syncConnectionState() async {
+    try {
+      final connectionState = await widget.dataSource.getConnectionState();
+      if (mounted) {
+        setState(() {
+          _isConnected = connectionState['isConnected'] ?? false;
+          _isConnecting = connectionState['isConnecting'] ?? false;
+        });
+      }
+    } catch (e) {
+      _log('Error syncing connection state: $e');
     }
   }
 
@@ -399,6 +489,8 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
             ),
           );
         }
+        // Sync connection state from native side
+        _syncConnectionState();
       }
     } catch (e) {
       _log('Error connecting to device: $e');
@@ -424,6 +516,8 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
         setState(() {
           _isConnecting = false;
         });
+        // Sync connection state from native side
+        _syncConnectionState();
       }
     }
   }
@@ -446,6 +540,8 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
         } else {
           _log('Disconnect command sent (connection status will update via stream)');
         }
+        // Sync connection state from native side
+        _syncConnectionState();
       }
     } catch (e) {
       _log('Error disconnecting: $e');
@@ -982,6 +1078,7 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
     _dataScrollController.dispose();
     _mainScrollController.dispose();
     _sendController.dispose();
+    _connectionStateTimer?.cancel(); // Cancel the periodic timer
     super.dispose();
   }
 }

@@ -6,7 +6,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:injectable/injectable.dart';
 
-enum VendorAndroidEventType { data, status, deviceInfo, networkInterface, bulkTransfer, interruptTransfer }
+enum VendorAndroidEventType {
+  data,
+  status,
+  deviceInfo,
+  networkInterface,
+  bulkTransfer,
+  interruptTransfer,
+  initResponseSent,
+  initResponseFailed,
+  initResponseError
+}
 
 class VendorAndroidEvent {
   final DateTime timestamp;
@@ -110,6 +120,18 @@ class VendorAndroidDataSource {
           break;
         case 'interrupt_transfer_result':
           _handleInterruptTransferResult(payload);
+          break;
+        case 'init_response_sent':
+          _handleInitResponseSent(payload);
+          break;
+        case 'init_response_failed':
+          _handleInitResponseFailed(payload);
+          break;
+        case 'init_response_error':
+          _handleInitResponseError(payload);
+          break;
+        case 'waiting_for_init':
+          _handleWaitingForInit(payload);
           break;
         case 'log':
           _log('Native: ${payload ?? ""}');
@@ -247,6 +269,34 @@ class VendorAndroidDataSource {
       payload: payload,
     ));
     _log('Interrupt transfer result: $payload');
+  }
+
+  void _handleInitResponseSent(dynamic payload) {
+    _sendEvent(VendorAndroidEvent.fromData(
+      type: VendorAndroidEventType.initResponseSent,
+      payload: payload,
+    ));
+    _log('Initial data sent: $payload');
+  }
+
+  void _handleInitResponseFailed(dynamic payload) {
+    _sendEvent(VendorAndroidEvent.fromData(
+      type: VendorAndroidEventType.initResponseFailed,
+      payload: payload,
+    ));
+    _log('Initial data failed: $payload');
+  }
+
+  void _handleInitResponseError(dynamic payload) {
+    _sendEvent(VendorAndroidEvent.fromData(
+      type: VendorAndroidEventType.initResponseError,
+      payload: payload,
+    ));
+    _log('Initial data error: $payload');
+  }
+
+  void _handleWaitingForInit(dynamic payload) {
+    _log('Waiting for initial data from device: $payload');
   }
 
   Future<void> _initializeNativeUsb() async {
@@ -534,6 +584,27 @@ class VendorAndroidDataSource {
     }
   }
 
+  Future<Map<String, dynamic>> getConnectionState() async {
+    try {
+      final result = await _methodChannel.invokeMethod('getConnectionState');
+      if (result is Map) {
+        return Map<String, dynamic>.from(result);
+      }
+      return {
+        'isConnected': false,
+        'isConnecting': false,
+        'deviceInfo': null,
+      };
+    } catch (e) {
+      _log('Error getting connection state: $e');
+      return {
+        'isConnected': false,
+        'isConnecting': false,
+        'deviceInfo': null,
+      };
+    }
+  }
+
   void _sendEvent(VendorAndroidEvent event) {
     try {
       _eventController.add(event);
@@ -571,6 +642,18 @@ class VendorAndroidDataSource {
 
   Stream<dynamic> get interruptTransferStream => eventStream
       .where((event) => event.type == VendorAndroidEventType.interruptTransfer)
+      .map((event) => event.payload);
+
+  // Initial data streams
+  Stream<dynamic> get initResponseSentStream =>
+      eventStream.where((event) => event.type == VendorAndroidEventType.initResponseSent).map((event) => event.payload);
+
+  Stream<dynamic> get initResponseFailedStream => eventStream
+      .where((event) => event.type == VendorAndroidEventType.initResponseFailed)
+      .map((event) => event.payload);
+
+  Stream<dynamic> get initResponseErrorStream => eventStream
+      .where((event) => event.type == VendorAndroidEventType.initResponseError)
       .map((event) => event.payload);
 
   // Properties

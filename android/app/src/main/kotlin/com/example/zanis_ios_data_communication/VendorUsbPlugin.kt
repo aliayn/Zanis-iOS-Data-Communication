@@ -49,6 +49,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
     private var readingJob: Job? = null
     private var pendingConnectionResult: MethodChannel.Result? = null
     private var isConnecting = false
+    private var waitingForInitMessage = false
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -66,10 +67,12 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                                 ) {
                                     devicePermissions[getDeviceKey(device)] = true
                                     log("USB permission granted for device: ${device.productName ?: "Unknown"}")
+                                    // Continue with connection since permission is now granted
                                     connectToDeviceInternal(device)
                                 } else {
                                     devicePermissions[getDeviceKey(device)] = false
                                     log("USB permission denied for device: ${device.productName ?: "Unknown"}")
+                                    isConnecting = false // Reset connecting state
                                     sendEvent("connection_status", false)
                                     pendingConnectionResult?.error(
                                         "PERMISSION_DENIED",
@@ -77,10 +80,17 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                                         null
                                     )
                                     pendingConnectionResult = null
-                                    isConnecting = false
                                 }
                             } else {
                                 log("USB permission intent received with null device")
+                                isConnecting = false // Reset connecting state
+                                sendEvent("connection_status", false)
+                                pendingConnectionResult?.error(
+                                    "PERMISSION_ERROR",
+                                    "USB permission intent received with null device",
+                                    null
+                                )
+                                pendingConnectionResult = null
                             }
                         }
                     }
@@ -109,6 +119,11 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             } catch (e: Exception) {
                 log("Error in USB receiver: ${e.message}")
                 // Don't crash the app, just log the error
+                // Reset connecting state on error
+                isConnecting = false
+                sendEvent("connection_status", false)
+                pendingConnectionResult?.error("RECEIVER_ERROR", e.message, null)
+                pendingConnectionResult = null
             }
         }
     }
@@ -165,6 +180,14 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             "disconnect" -> {
                 disconnectDevice()
                 result.success(true)
+            }
+
+            "getConnectionState" -> {
+                result.success(mapOf(
+                    "isConnected" to (currentDevice != null && currentConnection != null),
+                    "isConnecting" to isConnecting,
+                    "deviceInfo" to (currentDevice?.let { createDeviceInfo(it) } ?: null)
+                ))
             }
 
             "sendBulkData" -> {
@@ -373,6 +396,8 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
         if (device == null) {
             log("Device not found in USB manager device list")
+            isConnecting = false // Reset connecting state
+            sendEvent("connection_status", false)
             result.error("DEVICE_NOT_FOUND", "Device not found", null)
             return
         }
@@ -384,13 +409,15 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         if (usbManager?.hasPermission(device) == true) {
             log("Device already has permission")
             devicePermissions[deviceKey] = true
-            result.success(true)
+            // Continue with connection since we already have permission
+            connectToDeviceInternal(device)
             return
         }
 
         if (devicePermissions[deviceKey] == true) {
             log("Permission already granted according to our cache")
-            result.success(true)
+            // Continue with connection since we have cached permission
+            connectToDeviceInternal(device)
             return
         }
 
@@ -411,6 +438,8 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             result.success(null) // Permission result will come via broadcast
         } catch (e: Exception) {
             log("Error requesting permission: ${e.message}")
+            isConnecting = false // Reset connecting state on error
+            sendEvent("connection_status", false)
             result.error("PERMISSION_ERROR", e.message, null)
         }
     }
@@ -441,6 +470,10 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
         val deviceKey = getDeviceKey(device)
         log("Checking permissions for device: $deviceKey")
+
+        // Set connecting state immediately to prevent multiple attempts
+        isConnecting = true
+        sendEvent("connection_status", false) // Ensure UI shows connecting state
 
         // Check actual USB manager permission first
         if (usbManager?.hasPermission(device) != true) {
@@ -546,16 +579,43 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             log("Available endpoints - BulkIn: ${bulkInEndpoint != null}, BulkOut: ${bulkOutEndpoint != null}, InterruptIn: ${interruptInEndpoint != null}, InterruptOut: ${interruptOutEndpoint != null}")
 
             // Only report connected after full validation
-            sendEvent("connection_status", true)
+            sendEvent("connection_status", false) // Don't report as connected yet, wait for init message
 
             // Send device info
             sendEvent("device_attached", createDeviceInfo(device))
 
             // Start reading data in background if we have input endpoints
             if (bulkInEndpoint != null || interruptInEndpoint != null) {
+                waitingForInitMessage = true // Set flag to wait for init message
                 startDataReading()
+                log("Waiting for init message from device...")
+                sendEvent("waiting_for_init", "Waiting for device init message...")
+                
+                // Set a timeout for init message (10 seconds)
+                coroutineScope.launch {
+                    delay(10000) // 10 seconds timeout
+                    if (waitingForInitMessage) {
+                        log("Timeout waiting for init message from device")
+                        waitingForInitMessage = false
+                        sendEvent("connection_status", false)
+                        pendingConnectionResult?.error(
+                            "INIT_MESSAGE_TIMEOUT",
+                            "Timeout waiting for init message from device",
+                            null
+                        )
+                        pendingConnectionResult = null
+                        isConnecting = false
+                        // Disconnect the device since handshake failed
+                        disconnectDevice()
+                    }
+                }
             } else {
                 log("No input endpoints available for data reading")
+                // If no input endpoints, we can't receive init message, so report connection complete
+                sendEvent("connection_status", true)
+                pendingConnectionResult?.success(true)
+                pendingConnectionResult = null
+                isConnecting = false
             }
 
             // Report success to Flutter
@@ -565,6 +625,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
 
         } catch (e: Exception) {
             log("Error connecting to device: ${e.message}")
+            waitingForInitMessage = false // Reset waiting flag on error
             sendEvent("connection_status", false)
             pendingConnectionResult?.error("CONNECTION_ERROR", e.message, null)
             pendingConnectionResult = null
@@ -632,6 +693,22 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                     if (bytesRead > 0) {
                         consecutiveErrors = 0 // Reset error counter on successful read
                         val data = buffer.sliceArray(0 until bytesRead)
+
+                        // Check if this is the init message: 0xFF, 0x55, 0x02, 0x00, 0xEE, 0x10
+                        if (isInitMessage(data)) {
+                            log("Received init message from device, sending response")
+                            sendInitResponse()
+                            
+                            // Complete the connection process
+                            if (waitingForInitMessage) {
+                                waitingForInitMessage = false
+                                sendEvent("connection_status", true) // Now report as fully connected
+                                pendingConnectionResult?.success(true)
+                                pendingConnectionResult = null
+                                isConnecting = false
+                                log("Connection handshake completed successfully")
+                            }
+                        }
 
                         try {
                             // Try to convert to string, fallback to hex if not UTF-8
@@ -811,6 +888,9 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             readingJob?.cancel()
             readingJob = null
 
+            // Reset waiting flag
+            waitingForInitMessage = false
+
             // Release interface safely
             currentInterface?.let { usbInterface ->
                 try {
@@ -887,4 +967,38 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         devicePermissions.clear()
     }
 
+    private fun isInitMessage(data: ByteArray): Boolean {
+        return data.size >= 6 &&
+                data[0] == 0xFF.toByte() &&
+                data[1] == 0x55.toByte() &&
+                data[2] == 0x02.toByte() &&
+                data[3] == 0x00.toByte() &&
+                data[4] == 0xEE.toByte() &&
+                data[5] == 0x10.toByte()
+    }
+
+    private fun sendInitResponse() {
+        try {
+            // Response message: 0xFF, 0x02, 0x02, 0x00, 0xEE, 0xFF
+            val responseData = byteArrayOf(0xFF.toByte(), 0x02.toByte(), 0x02.toByte(), 0x00.toByte(), 0xEE.toByte(), 0xFF.toByte())
+            val writeEndpoint = bulkOutEndpoint ?: interruptOutEndpoint
+            if (writeEndpoint == null) {
+                log("No OUT endpoint available for sending init response")
+                return
+            }
+            val bytesWritten = currentConnection?.bulkTransfer(
+                writeEndpoint, responseData, responseData.size, 5000 // 5 second timeout
+            ) ?: -1
+            if (bytesWritten >= 0) {
+                log("Init response sent successfully: $bytesWritten bytes")
+                sendEvent("init_response_sent", mapOf("bytesSent" to bytesWritten))
+            } else {
+                log("Failed to send init response")
+                sendEvent("init_response_failed", "Failed to send init response")
+            }
+        } catch (e: Exception) {
+            log("Error sending init response: ${e.message}")
+            sendEvent("init_response_error", e.message)
+        }
+    }
 } 

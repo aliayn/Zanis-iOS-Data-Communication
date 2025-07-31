@@ -179,6 +179,12 @@ class DeviceDataSource {
             // Log specialized transfer results
             _log('Transfer result: ${event.payload}');
             break;
+          case VendorAndroidEventType.initResponseSent:
+          case VendorAndroidEventType.initResponseFailed:
+          case VendorAndroidEventType.initResponseError:
+            // Log init response events
+            _log('Init response event: ${event.type} - ${event.payload}');
+            break;
         }
       }
     }));
@@ -252,18 +258,18 @@ class DeviceDataSource {
 
   Future<List<dynamic>> getAvailableDevices() async {
     try {
-    if (_platformDetector.isIOS) {
-      await _iosDataSource.refreshConnection();
-      return [];
-    } else if (_platformDetector.isAndroid) {
-      switch (_currentCommunicationType) {
-        case CommunicationType.usbSerial:
-          return await _androidDataSource.getAvailableDevices();
-        case CommunicationType.vendorUsb:
-          return await _vendorAndroidDataSource.scanDevices();
-      }
-    } else {
-      _log('Unsupported platform');
+      if (_platformDetector.isIOS) {
+        await _iosDataSource.refreshConnection();
+        return [];
+      } else if (_platformDetector.isAndroid) {
+        switch (_currentCommunicationType) {
+          case CommunicationType.usbSerial:
+            return await _androidDataSource.getAvailableDevices();
+          case CommunicationType.vendorUsb:
+            return await _vendorAndroidDataSource.scanDevices();
+        }
+      } else {
+        _log('Unsupported platform');
         return [];
       }
     } catch (e) {
@@ -290,6 +296,18 @@ class DeviceDataSource {
     }
   }
 
+  Future<Map<String, dynamic>> getConnectionState() async {
+    if (_platformDetector.isAndroid && _currentCommunicationType == CommunicationType.vendorUsb) {
+      return await _vendorAndroidDataSource.getConnectionState();
+    } else {
+      return {
+        'isConnected': false,
+        'isConnecting': false,
+        'deviceInfo': null,
+      };
+    }
+  }
+
   // Public streams
   Stream<DeviceEvent> get eventStream => _eventController.stream;
 
@@ -309,6 +327,13 @@ class DeviceDataSource {
   Stream<dynamic> get bulkTransferStream => _vendorAndroidDataSource.bulkTransferStream;
 
   Stream<dynamic> get interruptTransferStream => _vendorAndroidDataSource.interruptTransferStream;
+
+  // Initial data streams (only available when using vendor USB)
+  Stream<dynamic> get initResponseSentStream => _vendorAndroidDataSource.initResponseSentStream;
+
+  Stream<dynamic> get initResponseFailedStream => _vendorAndroidDataSource.initResponseFailedStream;
+
+  Stream<dynamic> get initResponseErrorStream => _vendorAndroidDataSource.initResponseErrorStream;
 
   void dispose() {
     for (var subscription in _subscriptions) {
