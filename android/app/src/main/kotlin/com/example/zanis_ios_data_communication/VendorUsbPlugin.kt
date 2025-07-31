@@ -835,7 +835,7 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
             currentDevice = null
             currentConnection = null
             currentInterface = null
-
+ 
             bulkInEndpoint = null
             bulkOutEndpoint = null
             interruptInEndpoint = null
