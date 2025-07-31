@@ -185,6 +185,18 @@ class DeviceDataSource {
             // Log init response events
             _log('Init response event: ${event.type} - ${event.payload}');
             break;
+          case VendorAndroidEventType.protocolDataSent:
+          case VendorAndroidEventType.protocolDataFailed:
+          case VendorAndroidEventType.protocolDataError:
+            // Log protocol data events
+            _log('Protocol data event: ${event.type} - ${event.payload}');
+            break;
+          case VendorAndroidEventType.calibrationSent:
+          case VendorAndroidEventType.calibrationFailed:
+          case VendorAndroidEventType.calibrationError:
+            // Log calibration events
+            _log('Calibration event: ${event.type} - ${event.payload}');
+            break;
         }
       }
     }));
@@ -252,6 +264,24 @@ class DeviceDataSource {
       return await _vendorAndroidDataSource.sendInterruptTransfer(data, endpoint: endpoint);
     } else {
       _log('Interrupt transfer not supported on current platform/communication type');
+      return false;
+    }
+  }
+
+  Future<bool> sendProtocolData(int messageID, Uint8List? payload) async {
+    if (_platformDetector.isAndroid && _currentCommunicationType == CommunicationType.vendorUsb) {
+      return await _vendorAndroidDataSource.sendProtocolData(messageID, payload);
+    } else {
+      _log('Protocol data not supported on current platform/communication type');
+      return false;
+    }
+  }
+
+  Future<bool> sendCalibration() async {
+    if (_platformDetector.isAndroid && _currentCommunicationType == CommunicationType.vendorUsb) {
+      return await _vendorAndroidDataSource.sendCalibration();
+    } else {
+      _log('Calibration not supported on current platform/communication type');
       return false;
     }
   }
@@ -334,6 +364,20 @@ class DeviceDataSource {
   Stream<dynamic> get initResponseFailedStream => _vendorAndroidDataSource.initResponseFailedStream;
 
   Stream<dynamic> get initResponseErrorStream => _vendorAndroidDataSource.initResponseErrorStream;
+
+  // Protocol data streams (only available when using vendor USB)
+  Stream<dynamic> get protocolDataSentStream => _vendorAndroidDataSource.protocolDataSentStream;
+
+  Stream<dynamic> get protocolDataFailedStream => _vendorAndroidDataSource.protocolDataFailedStream;
+
+  Stream<dynamic> get protocolDataErrorStream => _vendorAndroidDataSource.protocolDataErrorStream;
+
+  // Calibration streams (only available when using vendor USB)
+  Stream<dynamic> get calibrationSentStream => _vendorAndroidDataSource.calibrationSentStream;
+
+  Stream<dynamic> get calibrationFailedStream => _vendorAndroidDataSource.calibrationFailedStream;
+
+  Stream<dynamic> get calibrationErrorStream => _vendorAndroidDataSource.calibrationErrorStream;
 
   void dispose() {
     for (var subscription in _subscriptions) {

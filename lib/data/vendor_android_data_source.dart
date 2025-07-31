@@ -15,7 +15,13 @@ enum VendorAndroidEventType {
   interruptTransfer,
   initResponseSent,
   initResponseFailed,
-  initResponseError
+  initResponseError,
+  protocolDataSent,
+  protocolDataFailed,
+  protocolDataError,
+  calibrationSent,
+  calibrationFailed,
+  calibrationError
 }
 
 class VendorAndroidEvent {
@@ -129,6 +135,24 @@ class VendorAndroidDataSource {
           break;
         case 'init_response_error':
           _handleInitResponseError(payload);
+          break;
+        case 'protocol_data_sent':
+          _handleProtocolDataSent(payload);
+          break;
+        case 'protocol_data_failed':
+          _handleProtocolDataFailed(payload);
+          break;
+        case 'protocol_data_error':
+          _handleProtocolDataError(payload);
+          break;
+        case 'calibration_sent':
+          _handleCalibrationSent(payload);
+          break;
+        case 'calibration_failed':
+          _handleCalibrationFailed(payload);
+          break;
+        case 'calibration_error':
+          _handleCalibrationError(payload);
           break;
         case 'waiting_for_init':
           _handleWaitingForInit(payload);
@@ -295,8 +319,56 @@ class VendorAndroidDataSource {
     _log('Initial data error: $payload');
   }
 
+  void _handleCalibrationSent(dynamic payload) {
+    _sendEvent(VendorAndroidEvent.fromData(
+      type: VendorAndroidEventType.calibrationSent,
+      payload: payload,
+    ));
+    _log('Calibration sent: $payload');
+  }
+
+  void _handleCalibrationFailed(dynamic payload) {
+    _sendEvent(VendorAndroidEvent.fromData(
+      type: VendorAndroidEventType.calibrationFailed,
+      payload: payload,
+    ));
+    _log('Calibration failed: $payload');
+  }
+
+  void _handleCalibrationError(dynamic payload) {
+    _sendEvent(VendorAndroidEvent.fromData(
+      type: VendorAndroidEventType.calibrationError,
+      payload: payload,
+    ));
+    _log('Calibration error: $payload');
+  }
+
   void _handleWaitingForInit(dynamic payload) {
     _log('Waiting for initial data from device: $payload');
+  }
+
+  void _handleProtocolDataSent(dynamic payload) {
+    _sendEvent(VendorAndroidEvent.fromData(
+      type: VendorAndroidEventType.protocolDataSent,
+      payload: payload,
+    ));
+    _log('Protocol data sent: $payload');
+  }
+
+  void _handleProtocolDataFailed(dynamic payload) {
+    _sendEvent(VendorAndroidEvent.fromData(
+      type: VendorAndroidEventType.protocolDataFailed,
+      payload: payload,
+    ));
+    _log('Protocol data failed: $payload');
+  }
+
+  void _handleProtocolDataError(dynamic payload) {
+    _sendEvent(VendorAndroidEvent.fromData(
+      type: VendorAndroidEventType.protocolDataError,
+      payload: payload,
+    ));
+    _log('Protocol data error: $payload');
   }
 
   Future<void> _initializeNativeUsb() async {
@@ -374,22 +446,38 @@ class VendorAndroidDataSource {
   }
 
   Future<bool> sendInterruptTransfer(Uint8List data, {int endpoint = 0x81}) async {
-    if (!_isConnected) {
-      _log('Cannot send interrupt transfer: Not connected');
-      return false;
-    }
-
     try {
       final result = await _methodChannel.invokeMethod('interruptTransfer', {
         'endpoint': endpoint,
         'data': data,
         'timeout': 1000,
       });
-
-      _log('Interrupt transfer sent: $result');
       return result == true;
     } catch (e) {
       _log('Error sending interrupt transfer: $e');
+      return false;
+    }
+  }
+
+  Future<bool> sendProtocolData(int messageID, Uint8List? payload) async {
+    try {
+      final result = await _methodChannel.invokeMethod('sendProtocolData', {
+        'messageID': messageID,
+        'payload': payload,
+      });
+      return result == true;
+    } catch (e) {
+      _log('Error sending protocol data: $e');
+      return false;
+    }
+  }
+
+  Future<bool> sendCalibration() async {
+    try {
+      final result = await _methodChannel.invokeMethod('sendCalibration');
+      return result == true;
+    } catch (e) {
+      _log('Error sending calibration: $e');
       return false;
     }
   }
@@ -655,6 +743,29 @@ class VendorAndroidDataSource {
   Stream<dynamic> get initResponseErrorStream => eventStream
       .where((event) => event.type == VendorAndroidEventType.initResponseError)
       .map((event) => event.payload);
+
+  // Protocol data streams
+  Stream<dynamic> get protocolDataSentStream =>
+      eventStream.where((event) => event.type == VendorAndroidEventType.protocolDataSent).map((event) => event.payload);
+
+  Stream<dynamic> get protocolDataFailedStream => eventStream
+      .where((event) => event.type == VendorAndroidEventType.protocolDataFailed)
+      .map((event) => event.payload);
+
+  Stream<dynamic> get protocolDataErrorStream => eventStream
+      .where((event) => event.type == VendorAndroidEventType.protocolDataError)
+      .map((event) => event.payload);
+
+  // Calibration streams
+  Stream<dynamic> get calibrationSentStream =>
+      eventStream.where((event) => event.type == VendorAndroidEventType.calibrationSent).map((event) => event.payload);
+
+  Stream<dynamic> get calibrationFailedStream => eventStream
+      .where((event) => event.type == VendorAndroidEventType.calibrationFailed)
+      .map((event) => event.payload);
+
+  Stream<dynamic> get calibrationErrorStream =>
+      eventStream.where((event) => event.type == VendorAndroidEventType.calibrationError).map((event) => event.payload);
 
   // Properties
   bool get isInitialized => _isInitialized;

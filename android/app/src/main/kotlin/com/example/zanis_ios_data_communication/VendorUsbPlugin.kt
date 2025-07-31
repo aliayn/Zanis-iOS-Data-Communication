@@ -26,6 +26,33 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         private const val CHANNEL_NAME = "com.zanis.vendor_usb"
         private const val EVENT_CHANNEL_NAME = "com.zanis.vendor_usb/events"
         private const val ACTION_USB_PERMISSION = "com.zanis.vendor_usb.USB_PERMISSION"
+        
+        // USB Protocol Constants
+        private const val ANDROID_START_BYTE_MSB = 0xFF
+        private const val ANDROID_START_BYTE_LSB = 0x02
+        private const val PACKET_FIX_LENGTH = 5 // Start bytes (2) + Length (2) + MessageID (1)
+        private const val MAX_PAYLOAD_LENGTH = 50
+        private const val MAX_BUFFER_SIZE = 50
+        
+        // Message IDs
+        private const val MESSAGE_ID_CALIBRATION = 0x43
+        private const val MESSAGE_ID_MEASUREMENT = 0x4D
+        private const val MESSAGE_ID_RESET = 0x52
+    }
+
+    /**
+     * Calculate checksum for the given buffer
+     * @param buffer The buffer to calculate checksum for
+     * @param start Starting index
+     * @param length Length of data to include in checksum
+     * @return Calculated checksum byte
+     */
+    private fun checksumCalculate(buffer: ByteArray, start: Int, length: Int): Byte {
+        var sum = 0
+        for (i in start until (start + length)) {
+            sum += buffer[i].toInt() and 0xFF
+        }
+        return (0x100 - sum).toByte()
     }
 
     private lateinit var context: Context
@@ -216,6 +243,19 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
                 } else {
                     result.error("INVALID_ARGUMENTS", "Transfer parameters required", null)
                 }
+            }
+
+            "sendProtocolData" -> {
+                val args = call.arguments as? Map<String, Any>
+                if (args != null) {
+                    sendProtocolData(args, result)
+                } else {
+                    result.error("INVALID_ARGUMENTS", "Protocol data parameters required", null)
+                }
+            }
+
+            "sendCalibration" -> {
+                sendCalibration(result)
             }
 
             else -> {
@@ -999,6 +1039,161 @@ class VendorUsbPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventCha
         } catch (e: Exception) {
             log("Error sending init response: ${e.message}")
             sendEvent("init_response_error", e.message)
+        }
+    }
+
+    /**
+     * Send data using the USB protocol
+     * @param messageID The message ID
+     * @param payload The payload data
+     * @param payloadLength Length of the payload
+     * @return true if successful, false otherwise
+     */
+    private fun sendData(messageID: Byte, payload: ByteArray?, payloadLength: Int): Boolean {
+        try {
+            // Validate payload length
+            if (payloadLength > MAX_PAYLOAD_LENGTH) {
+                log("Payload length $payloadLength exceeds maximum allowed $MAX_PAYLOAD_LENGTH")
+                return false
+            }
+
+            // Create transmission buffer
+            val txBuffer = ByteArray(MAX_BUFFER_SIZE) { 0 }
+            var arrayIndex = 0
+
+            // Add start bytes
+            txBuffer[arrayIndex++] = ANDROID_START_BYTE_MSB.toByte()
+            txBuffer[arrayIndex++] = ANDROID_START_BYTE_LSB.toByte()
+
+            // Add packet length (MSB and LSB)
+            val packetLength = PACKET_FIX_LENGTH + payloadLength
+            txBuffer[arrayIndex++] = (packetLength shr 8).toByte() // MSB
+            txBuffer[arrayIndex++] = packetLength.toByte() // LSB
+
+            // Add message ID
+            txBuffer[arrayIndex++] = messageID
+
+            // Add payload
+            if (payload != null && payloadLength > 0) {
+                for (i in 0 until payloadLength) {
+                    txBuffer[arrayIndex++] = payload[i]
+                }
+            }
+
+            // Calculate and add checksum
+            val checksum = checksumCalculate(txBuffer, 0, packetLength)
+            txBuffer[arrayIndex++] = checksum
+
+            // Send the data via USB
+            return sendUsbData(txBuffer, arrayIndex)
+        } catch (e: Exception) {
+            log("Error in sendData: ${e.message}")
+            return false
+        }
+    }
+
+    /**
+     * Send data via USB transmission
+     * @param data The data to send
+     * @param length Length of data to send
+     * @return true if successful, false otherwise
+     */
+    private fun sendUsbData(data: ByteArray, length: Int): Boolean {
+        if (currentConnection == null) {
+            log("No USB connection available")
+            return false
+        }
+
+        // Try to find any OUT endpoint
+        val writeEndpoint = bulkOutEndpoint ?: interruptOutEndpoint
+        if (writeEndpoint == null) {
+            log("No OUT endpoint available for sending data")
+            return false
+        }
+
+        try {
+            val bytesWritten = currentConnection!!.bulkTransfer(
+                writeEndpoint, data, length, 5000 // 5 second timeout
+            )
+
+            if (bytesWritten >= 0) {
+                log("USB data sent successfully: $bytesWritten bytes")
+                // Log the sent data for debugging
+                val hexString = data.take(length).joinToString(" ") {
+                    "0x${it.toUByte().toString(16).padStart(2, '0')}"
+                }
+                log("Sent data: $hexString")
+                return true
+            } else {
+                log("Failed to send USB data")
+                return false
+            }
+        } catch (e: Exception) {
+            log("Error sending USB data: ${e.message}")
+            return false
+        }
+    }
+
+    private fun sendProtocolData(args: Map<String, Any>, result: MethodChannel.Result) {
+        try {
+            val messageID = args["messageID"] as? Int ?: 0
+            val payload = args["payload"] as? ByteArray
+            val payloadLength = payload?.size ?: 0
+
+            log("Sending protocol data - MessageID: $messageID, PayloadLength: $payloadLength")
+
+            val success = sendData(messageID.toByte(), payload, payloadLength)
+            
+            if (success) {
+                result.success(true)
+                sendEvent("protocol_data_sent", mapOf(
+                    "messageID" to messageID,
+                    "payloadLength" to payloadLength,
+                    "success" to true
+                ))
+            } else {
+                result.error("PROTOCOL_SEND_FAILED", "Failed to send protocol data", null)
+                sendEvent("protocol_data_failed", mapOf(
+                    "messageID" to messageID,
+                    "payloadLength" to payloadLength,
+                    "success" to false
+                ))
+            }
+        } catch (e: Exception) {
+            log("Error sending protocol data: ${e.message}")
+            result.error("PROTOCOL_SEND_ERROR", e.message, null)
+            sendEvent("protocol_data_error", e.message)
+        }
+    }
+
+    private fun sendCalibration(result: MethodChannel.Result) {
+        try {
+            log("Sending calibration command (MessageID: 0x${MESSAGE_ID_CALIBRATION.toString(16).uppercase()})")
+            val messageID = MESSAGE_ID_CALIBRATION
+            val payload: ByteArray? = null // No payload for calibration
+            val payloadLength = 0
+
+            val success = sendData(messageID.toByte(), payload, payloadLength)
+
+            if (success) {
+                result.success(true)
+                sendEvent("calibration_sent", mapOf(
+                    "messageID" to messageID,
+                    "payloadLength" to payloadLength,
+                    "success" to true
+                ))
+            } else {
+                result.error("CALIBRATION_SEND_FAILED", "Failed to send calibration command", null)
+                sendEvent("calibration_failed", mapOf(
+                    "messageID" to messageID,
+                    "payloadLength" to payloadLength,
+                    "success" to false
+                ))
+            }
+        } catch (e: Exception) {
+            log("Error sending calibration command: ${e.message}")
+            result.error("CALIBRATION_SEND_ERROR", e.message, null)
+            sendEvent("calibration_error", e.message)
         }
     }
 } 

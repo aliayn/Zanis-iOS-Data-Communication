@@ -217,6 +217,92 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
           _log('Init response error stream error: $error');
         },
       );
+
+      // Protocol data streams (only for Android Vendor USB)
+      widget.dataSource.protocolDataSentStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Protocol Data Sent: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Protocol data sent stream error: $error');
+        },
+      );
+
+      widget.dataSource.protocolDataFailedStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Protocol Data Failed: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Protocol data failed stream error: $error');
+        },
+      );
+
+      widget.dataSource.protocolDataErrorStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Protocol Data Error: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Protocol data error stream error: $error');
+        },
+      );
+
+      // Calibration streams (only for Android Vendor USB)
+      widget.dataSource.calibrationSentStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Calibration Sent: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Calibration sent stream error: $error');
+        },
+      );
+
+      widget.dataSource.calibrationFailedStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Calibration Failed: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Calibration failed stream error: $error');
+        },
+      );
+
+      widget.dataSource.calibrationErrorStream.listen(
+        (result) {
+          if (mounted) {
+            setState(() {
+              _logs.add('${DateTime.now().toString().substring(11, 19)}: Calibration Error: $result');
+              _scrollToBottom(_logScrollController);
+            });
+          }
+        },
+        onError: (error) {
+          _log('Calibration error stream error: $error');
+        },
+      );
     }
   }
 
@@ -383,6 +469,52 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Interrupt transfer failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _sendCalibration() async {
+    if (_communicationType != CommunicationType.vendorUsb) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Calibration only available in Vendor USB mode')),
+      );
+      return;
+    }
+
+    if (!_isConnected) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No device connected')),
+      );
+      return;
+    }
+
+    try {
+      _log('Sending calibration command');
+      final success = await widget.dataSource.sendCalibration();
+
+      if (!context.mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Calibration command sent successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to send calibration command'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Calibration error: $e')),
       );
     }
   }
@@ -780,6 +912,14 @@ class _DeviceMonitorState extends State<DeviceMonitor> {
                         TextButton(
                           onPressed: _sendInterruptTransfer,
                           child: const Text('Interrupt Transfer'),
+                        ),
+                        ElevatedButton(
+                          onPressed: _isConnected ? _sendCalibration : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Calibration'),
                         ),
                       ],
                     ],
